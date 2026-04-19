@@ -1,0 +1,17 @@
+{
+  "name": "VokTest Englisch Klasse 6",
+  "short_name": "VokTest",
+  "description": "Vokabeltraining, Testmodus, Fehleranalyse und Benotung für Klasse 6.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b2533",
+  "theme_color": "#124559",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

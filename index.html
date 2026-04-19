@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#124559" />
+    <title>VokTest - Englisch Klasse 6</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-top panel">
+        <div>
+          <p class="badge">Klasse 6 · Englisch</p>
+          <h1>VokTest</h1>
+          <p class="subtitle">Geführtes Training mit Lernen, Quiz und Test.</p>
+        </div>
+        <button id="installBtn" class="ghost-btn hidden" type="button">Installieren</button>
+      </header>
+
+      <main class="app-main">
+        <section class="view" data-section-panel="start">
+          <article class="panel hero-card">
+            <p class="eyebrow">Willkommen</p>
+            <h2>Startklar für deine nächste Vokabelrunde?</h2>
+            <p>
+              Wähle den Modus und starte. Danach führt dich die App automatisch durch den Ablauf.
+            </p>
+            <div class="profile-strip">
+              <span id="levelBadge" class="level-badge">Level 1 · Wortstarter</span>
+              <span id="xpBadge" class="level-chip">XP 0</span>
+            </div>
+            <p id="motivationLine" class="motivation-line">
+              Jede richtige Antwort bringt dich zum nächsten Level.
+            </p>
+          </article>
+
+          <article class="panel setup-card" aria-label="Start-Einstellungen">
+            <h3>Modus</h3>
+            <div class="segmented">
+              <button data-mode="learn" class="seg-btn active" type="button">Lernen</button>
+              <button data-mode="quiz" class="seg-btn" type="button">Quiz</button>
+              <button data-mode="test" class="seg-btn" type="button">Test</button>
+            </div>
+
+            <h3>Richtung</h3>
+            <div class="segmented">
+              <button data-direction="en-de" class="seg-btn active" type="button">EN -> DE</button>
+              <button data-direction="de-en" class="seg-btn" type="button">DE -> EN</button>
+            </div>
+
+            <details class="advanced-options">
+              <summary>Erweiterte Optionen</summary>
+              <div class="two-col mt-10">
+                <label>
+                  Unit
+                  <select id="unitSelect"></select>
+                </label>
+                <label>
+                  Lektion
+                  <select id="lessonSelect"></select>
+                </label>
+              </div>
+
+              <div class="two-col">
+                <label>
+                  Fragen
+                  <select id="sizeSelect">
+                    <option value="10">10</option>
+                    <option value="15" selected>15</option>
+                    <option value="20">20</option>
+                    <option value="25">25</option>
+                    <option value="30">30</option>
+                  </select>
+                </label>
+                <label>
+                  Fokus
+                  <select id="focusSelect">
+                    <option value="all" selected>Alle Vokabeln</option>
+                    <option value="mistakes">Nur Fehlervokabeln</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+
+            <div class="action-row mt-10">
+              <button id="startBtn" class="primary-btn" type="button">Runde starten</button>
+              <button id="mistakeBtn" class="secondary-btn" type="button">Fehler wiederholen</button>
+            </div>
+          </article>
+        </section>
+
+        <section class="view hidden" data-section-panel="play">
+          <section class="panel play-panel" aria-live="polite">
+            <div class="xp-track">
+              <div class="xp-track-head">
+                <span id="playLevelBadge" class="level-chip">Level 1</span>
+                <span id="nextLevelText" class="level-sub">Noch 120 XP bis Level 2</span>
+              </div>
+              <div class="xp-bar"><span id="xpBarFill"></span></div>
+            </div>
+
+            <div class="status-row">
+              <p id="progressText">Bereit zum Start.</p>
+              <div class="chips">
+                <span id="streakChip" class="chip">Streak 0</span>
+                <span id="pointsChip" class="chip">Punkte 0</span>
+              </div>
+            </div>
+
+            <div class="question-card">
+              <p id="questionLabel" class="question-label">Frage</p>
+              <h2 id="questionText">Wechsle zu Start und beginne eine Runde.</h2>
+              <p id="hintText" class="hint hidden"></p>
+            </div>
+
+            <form id="answerForm" class="answer-form hidden" autocomplete="off">
+              <label for="answerInput">Deine Antwort</label>
+              <input id="answerInput" type="text" placeholder="Antwort eingeben" autocapitalize="none" />
+              <div class="answer-buttons">
+                <button class="primary-btn" type="submit">Prüfen</button>
+                <button id="skipBtn" class="ghost-btn" type="button">Überspringen</button>
+              </div>
+            </form>
+
+            <div id="mcOptions" class="mc-options hidden"></div>
+
+            <div id="learnActions" class="learn-actions hidden">
+              <button id="showAnswerBtn" class="ghost-btn" type="button">Antwort anzeigen</button>
+              <div id="knowButtons" class="hidden two-col">
+                <button id="knewBtn" class="primary-btn" type="button">Konnte ich</button>
+                <button id="againBtn" class="secondary-btn" type="button">Nochmal</button>
+              </div>
+            </div>
+
+            <div id="bigFeedback" class="big-feedback hidden"></div>
+            <div id="sparkLayer" class="spark-layer" aria-hidden="true"></div>
+            <p id="feedbackText" class="feedback"></p>
+            <div class="action-row mt-10">
+              <button id="backToStartBtn" class="ghost-btn" type="button">Neue Runde einstellen</button>
+            </div>
+          </section>
+
+          <section id="summaryPanel" class="panel summary-panel hidden">
+            <h2>Auswertung</h2>
+            <div id="summaryGrid" class="summary-grid"></div>
+            <p id="gradeText" class="grade"></p>
+            <div>
+              <h3>Fehlerliste</h3>
+              <ul id="mistakeList" class="mistake-list"></ul>
+            </div>
+          </section>
+        </section>
+
+        <section class="view hidden" data-section-panel="history">
+          <section class="panel stats-panel">
+            <h2>Dein Verlauf</h2>
+            <div id="historyGrid" class="summary-grid"></div>
+            <div>
+              <h3>Letzte Runden</h3>
+              <ul id="recentRunsList" class="recent-list"></ul>
+            </div>
+          </section>
+        </section>
+
+        <section class="view hidden" data-section-panel="settings">
+          <section class="panel import-panel">
+            <h2>Einstellungen</h2>
+            <h3>Vokabeln importieren</h3>
+            <p>
+              Format 1: JSON-Array mit Feldern <code>english</code> und <code>german</code>.<br />
+              Format 2: Eine Zeile pro Vokabel als CSV: <code>english;german;unit;lesson;page</code>
+            </p>
+            <label>
+              Foto für OCR (Kamera oder Galerie)
+              <input id="ocrFileInput" type="file" accept="image/*" capture="environment" />
+            </label>
+            <div class="action-row">
+              <button id="ocrBtn" class="secondary-btn" type="button">Foto scannen (OCR)</button>
+            </div>
+            <p id="ocrFeedback" class="feedback"></p>
+            <details class="ocr-details">
+              <summary>OCR-Rohtext anzeigen</summary>
+              <textarea
+                id="ocrRawText"
+                rows="5"
+                placeholder="Erkannter Text aus dem Foto erscheint hier."
+              ></textarea>
+            </details>
+            <textarea
+              id="importTextarea"
+              rows="6"
+              placeholder="to run;joggen;Unit 4;Lesson B;249"
+            ></textarea>
+            <div class="action-row">
+              <button id="importBtn" class="secondary-btn" type="button">Importieren</button>
+              <button id="resetBtn" class="ghost-btn" type="button">Nur eigene Imports löschen</button>
+            </div>
+            <p id="importFeedback" class="feedback"></p>
+
+            <hr class="settings-sep" />
+
+            <h3>Lernfortschritt</h3>
+            <p>
+              Setzt Verlauf, Fehlerstatistik, XP und Level zurück. Deine importierten Vokabeln bleiben
+              erhalten.
+            </p>
+            <div class="action-row">
+              <button id="resetProgressBtn" class="danger-btn" type="button">
+                Verlauf + XP zurücksetzen
+              </button>
+            </div>
+            <p id="settingsFeedback" class="feedback"></p>
+          </section>
+        </section>
+      </main>
+
+      <nav class="tabbar" aria-label="Hauptnavigation">
+        <button class="tab-btn active" type="button" data-section-target="start">Start</button>
+        <button class="tab-btn" type="button" data-section-target="play">Üben</button>
+        <button class="tab-btn" type="button" data-section-target="history">Verlauf</button>
+        <button class="tab-btn" type="button" data-section-target="settings">Einstellungen</button>
+      </nav>
+    </div>
+
+    <template id="optionTemplate">
+      <button class="option-btn" type="button"></button>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
