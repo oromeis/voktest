@@ -53,6 +53,7 @@ const remoteSync = {
   attempted: false,
   pendingPush: false,
   pushInFlight: false,
+  connectInFlight: false,
   timerId: null,
   status: "Nur lokal gespeichert."
 };
@@ -199,6 +200,7 @@ async function init() {
   registerServiceWorker();
 
   await hydrateFromServer();
+  startRemoteReconnectLoop();
 }
 
 function bindEvents() {
@@ -1116,7 +1118,7 @@ function saveLocalOnly(key, value) {
 
 async function hydrateFromServer() {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1800);
+  const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
     const response = await fetch("/api/state", {
@@ -1226,11 +1228,16 @@ function renderStorageStatus() {
   el.storageStatus.textContent = `${prefix} · ${text}`;
 }
 
-function scheduleServerPush() {
-  if (!remoteSync.available) {
-    return;
-  }
+function startRemoteReconnectLoop() {
+  window.setInterval(() => {
+    if (remoteSync.available || remoteSync.connectInFlight || remoteSync.pushInFlight) {
+      return;
+    }
+    void recoverRemoteAndPush();
+  }, 20000);
+}
 
+function scheduleServerPush() {
   remoteSync.pendingPush = true;
   if (remoteSync.timerId) {
     clearTimeout(remoteSync.timerId);
@@ -1238,8 +1245,12 @@ function scheduleServerPush() {
 
   remoteSync.timerId = setTimeout(() => {
     remoteSync.timerId = null;
-    void pushStateToServer();
-  }, 450);
+    if (remoteSync.available) {
+      void pushStateToServer();
+      return;
+    }
+    void recoverRemoteAndPush();
+  }, 700);
 }
 
 async function pushStateToServer() {
@@ -1278,6 +1289,47 @@ async function pushStateToServer() {
     if (remoteSync.pendingPush) {
       void pushStateToServer();
     }
+  }
+}
+
+async function recoverRemoteAndPush() {
+  if (remoteSync.connectInFlight) {
+    return;
+  }
+
+  remoteSync.connectInFlight = true;
+  try {
+    const reachable = await canReachServer();
+    if (!reachable) {
+      setRemoteStatus(false, "Nur lokal gespeichert (Server nicht erreichbar).");
+      return;
+    }
+
+    setRemoteStatus(true, "Server wieder erreichbar. Synchronisiere …");
+    remoteSync.pendingPush = true;
+    await pushStateToServer();
+  } finally {
+    remoteSync.connectInFlight = false;
+  }
+}
+
+async function canReachServer() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch("/api/state", {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      },
+      signal: controller.signal
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
