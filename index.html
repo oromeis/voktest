@@ -54,14 +54,10 @@
 
             <details class="advanced-options">
               <summary>Erweiterte Optionen</summary>
-              <div class="two-col mt-10">
+              <div class="mt-10">
                 <label>
                   Unit
                   <select id="unitSelect"></select>
-                </label>
-                <label>
-                  Lektion
-                  <select id="lessonSelect"></select>
                 </label>
               </div>
 
@@ -87,8 +83,19 @@
             </details>
 
             <div class="action-row mt-10">
-              <button id="startBtn" class="primary-btn" type="button">Runde starten</button>
-              <button id="mistakeBtn" class="secondary-btn" type="button">Fehler wiederholen</button>
+              <button id="startBtn" class="primary-btn icon-btn" type="button" title="Neue Runde starten">
+                <span class="btn-icon" aria-hidden="true">▶</span>
+                <span>Starten</span>
+              </button>
+              <button
+                id="mistakeBtn"
+                class="secondary-btn icon-btn"
+                type="button"
+                title="Nur Fehlervokabeln wiederholen"
+              >
+                <span class="btn-icon" aria-hidden="true">↺</span>
+                <span>Fehler</span>
+              </button>
             </div>
           </article>
         </section>
@@ -140,7 +147,10 @@
             <div id="sparkLayer" class="spark-layer" aria-hidden="true"></div>
             <p id="feedbackText" class="feedback"></p>
             <div class="action-row mt-10">
-              <button id="backToStartBtn" class="ghost-btn" type="button">Neue Runde einstellen</button>
+              <button id="backToStartBtn" class="ghost-btn icon-btn" type="button" title="Zurück zum Start">
+                <span class="btn-icon" aria-hidden="true">⌂</span>
+                <span>Zum Start</span>
+              </button>
             </div>
           </section>
 
@@ -172,14 +182,20 @@
             <h3>Vokabeln importieren</h3>
             <p>
               Format 1: JSON-Array mit Feldern <code>english</code> und <code>german</code>.<br />
-              Format 2: Eine Zeile pro Vokabel als CSV: <code>english;german;unit;lesson;page</code>
+              Format 2 (empfohlen): Eine Zeile pro Vokabel als CSV: <code>english;german;unit;page</code
+              ><br />
+              Kompatibel bleiben auch ältere 5-/6-Spalten-Zeilen:
+              <code>english;german;unit;lesson;page;topic</code>
             </p>
             <label>
               Foto für OCR (Kamera oder Galerie)
               <input id="ocrFileInput" type="file" accept="image/*" capture="environment" />
             </label>
             <div class="action-row">
-              <button id="ocrBtn" class="secondary-btn" type="button">Foto scannen (OCR)</button>
+              <button id="ocrBtn" class="secondary-btn icon-btn" type="button" title="Foto mit OCR auslesen">
+                <span class="btn-icon" aria-hidden="true">📷</span>
+                <span>OCR</span>
+              </button>
             </div>
             <p id="ocrFeedback" class="feedback"></p>
             <details class="ocr-details">
@@ -193,11 +209,17 @@
             <textarea
               id="importTextarea"
               rows="6"
-              placeholder="to run;joggen;Unit 4;Lesson B;249"
+              placeholder="to run;joggen;Unit 4;249"
             ></textarea>
             <div class="action-row">
-              <button id="importBtn" class="secondary-btn" type="button">Importieren</button>
-              <button id="resetBtn" class="ghost-btn" type="button">Nur eigene Imports löschen</button>
+              <button id="importBtn" class="secondary-btn icon-btn" type="button" title="Vokabeln importieren">
+                <span class="btn-icon" aria-hidden="true">⤓</span>
+                <span>Import</span>
+              </button>
+              <button id="resetBtn" class="ghost-btn icon-btn" type="button" title="Eigene Imports löschen">
+                <span class="btn-icon" aria-hidden="true">✕</span>
+                <span>Imports löschen</span>
+              </button>
             </div>
             <p id="importFeedback" class="feedback"></p>
 
@@ -209,8 +231,14 @@
               erhalten.
             </p>
             <div class="action-row">
-              <button id="resetProgressBtn" class="danger-btn" type="button">
-                Verlauf + XP zurücksetzen
+              <button
+                id="resetProgressBtn"
+                class="danger-btn icon-btn"
+                type="button"
+                title="Verlauf, XP und Badges zurücksetzen"
+              >
+                <span class="btn-icon" aria-hidden="true">⚠</span>
+                <span>Fortschritt zurücksetzen</span>
               </button>
             </div>
             <p id="settingsFeedback" class="feedback"></p>
@@ -219,10 +247,40 @@
       </main>
 
       <nav class="tabbar" aria-label="Hauptnavigation">
-        <button class="tab-btn active" type="button" data-section-target="start">Start</button>
-        <button class="tab-btn" type="button" data-section-target="play">Üben</button>
-        <button class="tab-btn" type="button" data-section-target="history">Verlauf</button>
-        <button class="tab-btn" type="button" data-section-target="settings">Einstellungen</button>
+        <button
+          class="tab-btn active"
+          type="button"
+          data-section-target="start"
+          aria-label="Start"
+          title="Startseite"
+        >
+          <span class="tab-icon" aria-hidden="true">🏠</span>
+          <span class="tab-text">Start</span>
+        </button>
+        <button class="tab-btn" type="button" data-section-target="play" aria-label="Üben" title="Üben">
+          <span class="tab-icon" aria-hidden="true">🎯</span>
+          <span class="tab-text">Üben</span>
+        </button>
+        <button
+          class="tab-btn"
+          type="button"
+          data-section-target="history"
+          aria-label="Verlauf"
+          title="Verlauf"
+        >
+          <span class="tab-icon" aria-hidden="true">📈</span>
+          <span class="tab-text">Verlauf</span>
+        </button>
+        <button
+          class="tab-btn"
+          type="button"
+          data-section-target="settings"
+          aria-label="Einstellungen"
+          title="Einstellungen"
+        >
+          <span class="tab-icon" aria-hidden="true">⚙</span>
+          <span class="tab-text">Einst.</span>
+        </button>
       </nav>
     </div>
 

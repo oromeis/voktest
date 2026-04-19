@@ -56,8 +56,7 @@ export function createImportModule({
 
       const detectedPage = detectPageFromText(rawText);
       const fallbackUnit = state.settings.unit === "all" ? "OCR Unit" : state.settings.unit;
-      const fallbackLesson =
-        state.settings.lesson === "all" ? "OCR Lektion" : state.settings.lesson;
+      const fallbackLesson = "Allgemein";
 
       const lines = candidates.map((entry) =>
         toCsvLineFromCandidate(entry, fallbackUnit, fallbackLesson, detectedPage)
@@ -293,9 +292,23 @@ export function createImportModule({
     const stamp = Date.now();
     return lines
       .map((line, index) => {
-        const [english, german, unit, lesson, page, topic] = line
-          .split(";")
-          .map((part) => part.trim());
+        const fields = line.split(";").map((part) => part.trim());
+        const [english, german] = fields;
+        const unit = fields[2] || "";
+        let lesson = "";
+        let page = "";
+        let topic = "";
+
+        if (fields.length >= 6) {
+          lesson = fields[3] || "";
+          page = fields[4] || "";
+          topic = fields[5] || "";
+        } else if (fields.length === 5) {
+          lesson = fields[3] || "";
+          page = fields[4] || "";
+        } else if (fields.length === 4) {
+          page = fields[3] || "";
+        }
 
         return toEntry(
           {
@@ -322,7 +335,7 @@ export function createImportModule({
       english: String(item.english).trim(),
       german: String(item.german).trim(),
       unit: String(item.unit || "Eigene Unit").trim(),
-      lesson: String(item.lesson || "Eigene Lektion").trim(),
+      lesson: String(item.lesson || "Allgemein").trim(),
       page: Number(item.page || 0),
       topic: String(item.topic || "Import")
     };
@@ -608,7 +621,7 @@ export function createImportModule({
     const english = sanitizeCsvField(entry.english);
     const german = sanitizeCsvField(entry.german).replace(/;/g, ", ");
     const unitSafe = sanitizeCsvField(unit || "OCR Unit");
-    const lessonSafe = sanitizeCsvField(lesson || "OCR Lektion");
+    const lessonSafe = sanitizeCsvField(lesson || "Allgemein");
     const pageSafe = Number.isFinite(Number(page)) && Number(page) > 0 ? String(page) : "";
 
     return `${english};${german};${unitSafe};${lessonSafe};${pageSafe}`;

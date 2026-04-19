@@ -15,7 +15,6 @@ const DEFAULT_SETTINGS = {
   direction: "en-de",
   size: 15,
   unit: "all",
-  lesson: "all",
   focus: "all",
   section: "start"
 };
@@ -48,7 +47,6 @@ const el = {
   xpBadge: document.getElementById("xpBadge"),
   motivationLine: document.getElementById("motivationLine"),
   unitSelect: document.getElementById("unitSelect"),
-  lessonSelect: document.getElementById("lessonSelect"),
   sizeSelect: document.getElementById("sizeSelect"),
   focusSelect: document.getElementById("focusSelect"),
   startBtn: document.getElementById("startBtn"),
@@ -122,7 +120,7 @@ const importModule = createImportModule({
   },
   persistCustomVocabulary: () => save(STORAGE_KEYS.customVocabulary, state.customVocabulary),
   onVocabularyChanged: () => {
-    refreshUnitAndLessonFilters();
+    refreshUnitFilters();
     renderIdleState();
   }
 });
@@ -136,7 +134,7 @@ function init() {
   bindSectionNavigation();
   importModule.bind();
   applySettingsToControls();
-  refreshUnitAndLessonFilters();
+  refreshUnitFilters();
   historyModule.renderHistory();
   updateGamificationWidgets(0);
   renderIdleState();
@@ -170,12 +168,7 @@ function bindEvents() {
   el.unitSelect.addEventListener("change", () => {
     state.settings.unit = el.unitSelect.value;
     save(STORAGE_KEYS.settings, state.settings);
-    refreshLessonOptions();
-  });
-
-  el.lessonSelect.addEventListener("change", () => {
-    state.settings.lesson = el.lessonSelect.value;
-    save(STORAGE_KEYS.settings, state.settings);
+    renderIdleState();
   });
 
   el.focusSelect.addEventListener("change", () => {
@@ -309,25 +302,28 @@ function getAllVocabulary() {
   return [...BASE_VOCABULARY, ...state.customVocabulary];
 }
 
-function refreshUnitAndLessonFilters() {
-  const units = [...new Set(getAllVocabulary().map((entry) => entry.unit || "Ohne Unit"))].sort();
-  buildSelectOptions(el.unitSelect, ["all", ...units], state.settings.unit, "Alle Units");
-  refreshLessonOptions();
+function getEntryUnit(entry) {
+  const rawUnit = entry?.unit;
+  const unit = typeof rawUnit === "string" ? rawUnit.trim() : "";
+  return unit || "Ohne Unit";
 }
 
-function refreshLessonOptions() {
-  const filtered = getAllVocabulary().filter((entry) => {
-    if (state.settings.unit === "all") {
-      return true;
-    }
-    return (entry.unit || "Ohne Unit") === state.settings.unit;
-  });
-
-  const lessons = [...new Set(filtered.map((entry) => entry.lesson || "Ohne Lektion"))].sort();
-  buildSelectOptions(el.lessonSelect, ["all", ...lessons], state.settings.lesson, "Alle Lektionen");
+function refreshUnitFilters() {
+  const units = [
+    ...new Set(
+      getAllVocabulary()
+        .filter(Boolean)
+        .map((entry) => getEntryUnit(entry))
+    )
+  ].sort((left, right) => left.localeCompare(right, "de", { numeric: true, sensitivity: "base" }));
+  buildSelectOptions(el.unitSelect, ["all", ...units], state.settings.unit, "Alle Units");
 }
 
 function buildSelectOptions(select, values, activeValue, allLabel) {
+  if (!select) {
+    return;
+  }
+
   select.innerHTML = "";
   values.forEach((value) => {
     const option = document.createElement("option");
@@ -344,9 +340,6 @@ function buildSelectOptions(select, values, activeValue, allLabel) {
   select.value = "all";
   if (select === el.unitSelect) {
     state.settings.unit = "all";
-  }
-  if (select === el.lessonSelect) {
-    state.settings.lesson = "all";
   }
   save(STORAGE_KEYS.settings, state.settings);
 }
@@ -366,10 +359,10 @@ function buildQuestion(entry) {
 function getPool(focusMode) {
   const all = getAllVocabulary();
   let pool = all.filter((entry) => {
-    if (state.settings.unit !== "all" && (entry.unit || "Ohne Unit") !== state.settings.unit) {
+    if (!entry) {
       return false;
     }
-    if (state.settings.lesson !== "all" && (entry.lesson || "Ohne Lektion") !== state.settings.lesson) {
+    if (state.settings.unit !== "all" && getEntryUnit(entry) !== state.settings.unit) {
       return false;
     }
     return true;
