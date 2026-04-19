@@ -705,6 +705,14 @@ function handleResetProgress() {
   renderAdminState();
   renderWeeklyGoalHint();
   setSettingsFeedback("Lernfortschritt wurde zurückgesetzt.", true);
+
+  // Reset should be persisted to server immediately (not only via delayed sync).
+  if (remoteSync.available) {
+    remoteSync.pendingPush = true;
+    void pushStateToServer();
+  } else {
+    void recoverRemoteAndPush();
+  }
 }
 
 function bindSessionVisibilityTracking() {
@@ -819,6 +827,50 @@ function normalizeHistoryEntries() {
   }
 }
 
+function touchWeeklyGoal(weeklyGoal) {
+  if (!weeklyGoal || typeof weeklyGoal !== "object") {
+    return weeklyGoal;
+  }
+  weeklyGoal.updatedAt = new Date().toISOString();
+  return weeklyGoal;
+}
+
+function getWeeklyGoalUpdatedMs(weeklyGoal) {
+  if (!weeklyGoal || typeof weeklyGoal !== "object") {
+    return 0;
+  }
+  const timestamp = Date.parse(weeklyGoal.updatedAt || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function resolveWeeklyGoalState(localGoal, serverGoal) {
+  if (!serverGoal) {
+    return { value: localGoal || null, preferLocal: !!localGoal };
+  }
+
+  if (!localGoal) {
+    return { value: serverGoal, preferLocal: false };
+  }
+
+  const localWeekKey = typeof localGoal.weekKey === "string" ? localGoal.weekKey : "";
+  const serverWeekKey = typeof serverGoal.weekKey === "string" ? serverGoal.weekKey : "";
+  if (!localWeekKey || !serverWeekKey || localWeekKey !== serverWeekKey) {
+    return { value: serverGoal, preferLocal: false };
+  }
+
+  const localUpdatedMs = getWeeklyGoalUpdatedMs(localGoal);
+  const serverUpdatedMs = getWeeklyGoalUpdatedMs(serverGoal);
+  if (localUpdatedMs > serverUpdatedMs) {
+    return { value: localGoal, preferLocal: true };
+  }
+
+  if (localUpdatedMs > 0 && serverUpdatedMs === 0) {
+    return { value: localGoal, preferLocal: true };
+  }
+
+  return { value: serverGoal, preferLocal: false };
+}
+
 function ensureCurrentWeeklyGoal(forceReset = false) {
   const now = new Date();
   const week = getWeekContext(now);
@@ -830,7 +882,7 @@ function ensureCurrentWeeklyGoal(forceReset = false) {
   );
 
   if (forceReset || !existing || existing.weekKey !== week.weekKey) {
-    state.weeklyGoal = createWeeklyGoal(now, targetMinutes);
+    state.weeklyGoal = touchWeeklyGoal(createWeeklyGoal(now, targetMinutes));
     save(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
   } else {
     let changed = false;
@@ -871,6 +923,7 @@ function ensureCurrentWeeklyGoal(forceReset = false) {
 
     state.weeklyGoal = existing;
     if (changed) {
+      touchWeeklyGoal(state.weeklyGoal);
       save(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
     }
   }
@@ -949,6 +1002,7 @@ function applyWeeklyRewardIfEligible(session) {
     }
   }
 
+  touchWeeklyGoal(weeklyGoal);
   save(STORAGE_KEYS.weeklyGoal, weeklyGoal);
 }
 
@@ -1061,6 +1115,7 @@ function handleSaveWeeklyTarget() {
     state.weeklyGoal.achieved = usedMinutes >= target;
   }
 
+  touchWeeklyGoal(state.weeklyGoal);
   save(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
   renderAdminState();
   renderWeeklyGoalHint();
@@ -1163,6 +1218,7 @@ async function hydrateFromServer() {
 
 function applyServerState(serverState) {
   const has = (key) => Object.prototype.hasOwnProperty.call(serverState, key);
+  let shouldPushLocalWeeklyGoal = false;
 
   if (has(STORAGE_KEYS.history)) {
     state.history = Array.isArray(serverState[STORAGE_KEYS.history])
@@ -1197,7 +1253,10 @@ function applyServerState(serverState) {
     saveLocalOnly(STORAGE_KEYS.admin, state.adminConfig);
   }
   if (has(STORAGE_KEYS.weeklyGoal)) {
-    state.weeklyGoal = serverState[STORAGE_KEYS.weeklyGoal] || null;
+    const serverWeeklyGoal = serverState[STORAGE_KEYS.weeklyGoal] || null;
+    const resolvedWeeklyGoal = resolveWeeklyGoalState(state.weeklyGoal, serverWeeklyGoal);
+    state.weeklyGoal = resolvedWeeklyGoal.value;
+    shouldPushLocalWeeklyGoal = resolvedWeeklyGoal.preferLocal;
     saveLocalOnly(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
   }
 
@@ -1210,6 +1269,11 @@ function applyServerState(serverState) {
   renderWeeklyGoalHint();
   renderIdleState();
   updateGamificationWidgets(0);
+
+  if (shouldPushLocalWeeklyGoal) {
+    remoteSync.pendingPush = true;
+    void pushStateToServer();
+  }
 }
 
 function setRemoteStatus(available, statusText) {

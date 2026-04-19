@@ -115,6 +115,7 @@ export function getRewardLabel(reward) {
 
 export function createWeeklyGoal(date = new Date(), targetMinutes = DEFAULT_TARGET_MINUTES, random = Math.random) {
   const { weekKey, weekStart, weekEnd } = getWeekContext(date);
+  const timestamp = new Date().toISOString();
   return {
     weekKey,
     weekStartIso: weekStart.toISOString(),
@@ -125,7 +126,8 @@ export function createWeeklyGoal(date = new Date(), targetMinutes = DEFAULT_TARG
     achievedAt: null,
     rewardGranted: false,
     rewardGrantedAt: null,
-    rewardBonusPoints: 0
+    rewardBonusPoints: 0,
+    updatedAt: timestamp
   };
 }
 
