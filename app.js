@@ -1,4 +1,17 @@
 import { BASE_VOCABULARY } from "./data/vocabulary.js";
+import {
+  DEFAULT_TARGET_MINUTES,
+  computeRewardBonusPoints,
+  createWeeklyGoal,
+  formatDeadlineText,
+  getRewardLabel,
+  getWeekContext,
+  isDateWithinRange,
+  isDynamicPasswordValid,
+  normalizeSecret,
+  sanitizeTargetMinutes,
+  secondsToMinutes
+} from "./modules/admin-utils.js";
 import { createHistoryModule } from "./modules/history-module.js";
 import { createImportModule } from "./modules/import-module.js";
 import { isAnswerCorrect, labelMode, shuffle, splitVariants } from "./modules/common.js";
@@ -7,7 +20,9 @@ const STORAGE_KEYS = {
   history: "voktest_history_v1",
   mistakes: "voktest_mistakes_v1",
   customVocabulary: "voktest_custom_v1",
-  settings: "voktest_settings_v1"
+  settings: "voktest_settings_v1",
+  admin: "voktest_admin_v1",
+  weeklyGoal: "voktest_weekly_goal_v1"
 };
 
 const DEFAULT_SETTINGS = {
@@ -29,11 +44,27 @@ const LEVEL_TITLES = [
   "Klassenchampion"
 ];
 
+const DEFAULT_ADMIN_CONFIG = {
+  backupPin: ""
+};
+
+const remoteSync = {
+  available: false,
+  attempted: false,
+  pendingPush: false,
+  pushInFlight: false,
+  timerId: null,
+  status: "Nur lokal gespeichert."
+};
+
 const state = {
   customVocabulary: load(STORAGE_KEYS.customVocabulary, []),
   history: load(STORAGE_KEYS.history, []),
   mistakes: load(STORAGE_KEYS.mistakes, {}),
   settings: { ...DEFAULT_SETTINGS, ...load(STORAGE_KEYS.settings, {}) },
+  adminConfig: { ...DEFAULT_ADMIN_CONFIG, ...load(STORAGE_KEYS.admin, {}) },
+  weeklyGoal: load(STORAGE_KEYS.weeklyGoal, null),
+  adminSessionUnlocked: false,
   session: null,
   deferredInstallPrompt: null
 };
@@ -90,7 +121,27 @@ const el = {
   importFeedback: document.getElementById("importFeedback"),
   resetProgressBtn: document.getElementById("resetProgressBtn"),
   settingsFeedback: document.getElementById("settingsFeedback"),
-  installBtn: document.getElementById("installBtn")
+  storageStatus: document.getElementById("storageStatus"),
+  installBtn: document.getElementById("installBtn"),
+  weeklyGoalHint: document.getElementById("weeklyGoalHint"),
+  adminLoginCard: document.getElementById("adminLoginCard"),
+  adminDashboardCard: document.getElementById("adminDashboardCard"),
+  adminPasswordInput: document.getElementById("adminPasswordInput"),
+  adminUnlockBtn: document.getElementById("adminUnlockBtn"),
+  adminAuthFeedback: document.getElementById("adminAuthFeedback"),
+  adminLockBtn: document.getElementById("adminLockBtn"),
+  adminWeekLabel: document.getElementById("adminWeekLabel"),
+  adminDeadlineLabel: document.getElementById("adminDeadlineLabel"),
+  adminProgressFill: document.getElementById("adminProgressFill"),
+  adminProgressText: document.getElementById("adminProgressText"),
+  adminRemainingText: document.getElementById("adminRemainingText"),
+  adminRewardText: document.getElementById("adminRewardText"),
+  adminRewardStatus: document.getElementById("adminRewardStatus"),
+  weeklyTargetInput: document.getElementById("weeklyTargetInput"),
+  saveWeeklyTargetBtn: document.getElementById("saveWeeklyTargetBtn"),
+  adminBackupPinInput: document.getElementById("adminBackupPinInput"),
+  saveBackupPinBtn: document.getElementById("saveBackupPinBtn"),
+  adminSettingsFeedback: document.getElementById("adminSettingsFeedback")
 };
 
 const historyModule = createHistoryModule({
@@ -126,19 +177,28 @@ const importModule = createImportModule({
 });
 
 let feedbackTimeoutId = null;
+let sessionTickIntervalId = null;
 
-init();
+void init();
 
-function init() {
+async function init() {
+  normalizeHistoryEntries();
+  ensureCurrentWeeklyGoal();
   bindEvents();
   bindSectionNavigation();
+  bindSessionVisibilityTracking();
   importModule.bind();
   applySettingsToControls();
   refreshUnitFilters();
   historyModule.renderHistory();
   updateGamificationWidgets(0);
+  renderAdminState();
+  renderWeeklyGoalHint();
   renderIdleState();
+  renderStorageStatus();
   registerServiceWorker();
+
+  await hydrateFromServer();
 }
 
 function bindEvents() {
@@ -246,6 +306,18 @@ function bindEvents() {
     state.deferredInstallPrompt = null;
     el.installBtn.classList.add("hidden");
   });
+
+  el.adminUnlockBtn.addEventListener("click", handleAdminUnlock);
+  el.adminLockBtn.addEventListener("click", lockAdminSession);
+  el.saveWeeklyTargetBtn.addEventListener("click", handleSaveWeeklyTarget);
+  el.saveBackupPinBtn.addEventListener("click", handleSaveBackupPin);
+
+  el.adminPasswordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleAdminUnlock();
+    }
+  });
 }
 
 function bindSectionNavigation() {
@@ -271,7 +343,7 @@ function setActiveSection(sectionName) {
     import: "settings"
   };
   const normalizedSection = legacyMap[sectionName] || sectionName;
-  const allowed = ["start", "play", "history", "settings"];
+  const allowed = ["start", "play", "history", "settings", "admin"];
   const activeSection = allowed.includes(normalizedSection) ? normalizedSection : "start";
 
   state.settings.section = activeSection;
@@ -284,6 +356,10 @@ function setActiveSection(sectionName) {
   el.sectionPanels.forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.sectionPanel !== activeSection);
   });
+
+  if (activeSection === "admin") {
+    renderAdminState();
+  }
 }
 
 function syncModeButtons() {
@@ -382,6 +458,7 @@ function getPool(focusMode) {
 }
 
 function startSession(focusMode = "all") {
+  ensureCurrentWeeklyGoal();
   const pool = getPool(focusMode);
   if (pool.length === 0) {
     setFeedback("Keine passenden Vokabeln gefunden. Prüfe Filter oder importiere neue Daten.", false);
@@ -402,9 +479,13 @@ function startSession(focusMode = "all") {
     correct: 0,
     wrong: 0,
     points: 0,
+    rewardBonusPoints: 0,
     streak: 0,
     bestStreak: 0,
-    wrongItems: []
+    wrongItems: [],
+    weekKey: state.weeklyGoal?.weekKey || getWeekContext(new Date()).weekKey,
+    activeSeconds: 0,
+    activeStartedAt: document.visibilityState === "visible" ? Date.now() : null
   };
 
   el.summaryPanel.classList.add("hidden");
@@ -548,10 +629,19 @@ function submitQuestion(isCorrect, userAnswer) {
 }
 
 function finishSession() {
-  const entry = historyModule.recordSession(state.session, state.settings.direction);
-  historyModule.renderSummary(entry, state.session.wrongItems);
+  const session = state.session;
+  if (!session) {
+    return;
+  }
+
+  finalizeSessionTiming(session);
+  applyWeeklyRewardIfEligible(session);
+  const entry = historyModule.recordSession(session, state.settings.direction);
+  historyModule.renderSummary(entry, session.wrongItems);
   historyModule.renderHistory();
   updateGamificationWidgets(0);
+  renderAdminState();
+  renderWeeklyGoalHint();
   state.session = null;
   el.progressText.textContent = "Runde beendet. Du kannst direkt die nächste starten.";
 }
@@ -574,6 +664,7 @@ function renderIdleState() {
   el.feedbackText.textContent = "";
   el.feedbackText.className = "feedback";
   updateGamificationWidgets(0);
+  renderWeeklyGoalHint();
 }
 
 function setFeedback(text, ok) {
@@ -597,6 +688,7 @@ function handleResetProgress() {
   state.session = null;
   state.history = [];
   state.mistakes = {};
+  ensureCurrentWeeklyGoal(true);
   save(STORAGE_KEYS.history, state.history);
   save(STORAGE_KEYS.mistakes, state.mistakes);
 
@@ -608,7 +700,397 @@ function handleResetProgress() {
   historyModule.renderHistory();
   renderIdleState();
   updateGamificationWidgets(0);
+  renderAdminState();
+  renderWeeklyGoalHint();
   setSettingsFeedback("Lernfortschritt wurde zurückgesetzt.", true);
+}
+
+function bindSessionVisibilityTracking() {
+  document.addEventListener("visibilitychange", () => {
+    if (!state.session) {
+      return;
+    }
+
+    if (document.visibilityState === "hidden") {
+      pauseSessionTimer(state.session);
+    } else if (document.visibilityState === "visible") {
+      resumeSessionTimer(state.session);
+    }
+
+    renderWeeklyGoalHint();
+    if (state.settings.section === "admin") {
+      renderAdminState();
+    }
+  });
+
+  if (sessionTickIntervalId) {
+    clearInterval(sessionTickIntervalId);
+  }
+
+  sessionTickIntervalId = window.setInterval(() => {
+    if (!state.session) {
+      return;
+    }
+    renderWeeklyGoalHint();
+    if (state.settings.section === "admin") {
+      renderAdminState();
+    }
+  }, 15000);
+}
+
+function pauseSessionTimer(session) {
+  if (!session || session.activeStartedAt === null) {
+    return;
+  }
+  const delta = (Date.now() - session.activeStartedAt) / 1000;
+  session.activeSeconds = Math.max(0, (session.activeSeconds || 0) + delta);
+  session.activeStartedAt = null;
+}
+
+function resumeSessionTimer(session) {
+  if (!session || session.activeStartedAt !== null) {
+    return;
+  }
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  session.activeStartedAt = Date.now();
+}
+
+function getLiveSessionSeconds(session) {
+  if (!session) {
+    return 0;
+  }
+
+  let total = Math.max(0, Number(session.activeSeconds) || 0);
+  if (session.activeStartedAt !== null && document.visibilityState === "visible") {
+    total += (Date.now() - session.activeStartedAt) / 1000;
+  }
+  return Math.max(0, total);
+}
+
+function finalizeSessionTiming(session) {
+  pauseSessionTimer(session);
+  session.durationSeconds = Math.max(0, Math.round(session.activeSeconds || 0));
+}
+
+function normalizeHistoryEntries() {
+  if (!Array.isArray(state.history)) {
+    state.history = [];
+    save(STORAGE_KEYS.history, state.history);
+    return;
+  }
+
+  let changed = false;
+  state.history = state.history.map((entry) => {
+    const safe = { ...(entry || {}) };
+    const next = {
+      ...safe,
+      points: Math.max(0, Number(safe.points) || 0),
+      durationSeconds: Math.max(0, Math.round(Number(safe.durationSeconds) || 0)),
+      rewardBonusPoints: Math.max(0, Number(safe.rewardBonusPoints) || 0),
+      weekKey: typeof safe.weekKey === "string" ? safe.weekKey : ""
+    };
+
+    if (!next.weekKey && next.date) {
+      const parsedDate = new Date(next.date);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        next.weekKey = getWeekContext(parsedDate).weekKey;
+        changed = true;
+      }
+    }
+
+    if (
+      next.points !== safe.points ||
+      next.durationSeconds !== safe.durationSeconds ||
+      next.rewardBonusPoints !== safe.rewardBonusPoints ||
+      next.weekKey !== safe.weekKey
+    ) {
+      changed = true;
+    }
+
+    return next;
+  });
+
+  if (changed) {
+    save(STORAGE_KEYS.history, state.history);
+  }
+}
+
+function ensureCurrentWeeklyGoal(forceReset = false) {
+  const now = new Date();
+  const week = getWeekContext(now);
+  const existing = state.weeklyGoal;
+
+  const targetMinutes = sanitizeTargetMinutes(
+    existing?.targetMinutes,
+    DEFAULT_TARGET_MINUTES
+  );
+
+  if (forceReset || !existing || existing.weekKey !== week.weekKey) {
+    state.weeklyGoal = createWeeklyGoal(now, targetMinutes);
+    save(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
+  } else {
+    let changed = false;
+    if (existing.weekStartIso !== week.weekStart.toISOString()) {
+      existing.weekStartIso = week.weekStart.toISOString();
+      changed = true;
+    }
+    if (existing.weekEndIso !== week.weekEnd.toISOString()) {
+      existing.weekEndIso = week.weekEnd.toISOString();
+      changed = true;
+    }
+    if (existing.targetMinutes !== targetMinutes) {
+      existing.targetMinutes = targetMinutes;
+      changed = true;
+    }
+    if (!existing.rewardDefinition || typeof existing.rewardDefinition !== "object") {
+      existing.rewardDefinition = createWeeklyGoal(now, targetMinutes).rewardDefinition;
+      changed = true;
+    }
+    if (typeof existing.rewardGranted !== "boolean") {
+      existing.rewardGranted = false;
+      changed = true;
+    }
+    if (typeof existing.achieved !== "boolean") {
+      existing.achieved = false;
+      changed = true;
+    }
+    if (typeof existing.rewardBonusPoints !== "number") {
+      existing.rewardBonusPoints = 0;
+      changed = true;
+    }
+
+    const usedMinutes = secondsToMinutes(getWeeklyUsedSeconds(existing, false));
+    if (!existing.rewardGranted && existing.achieved !== (usedMinutes >= existing.targetMinutes)) {
+      existing.achieved = usedMinutes >= existing.targetMinutes;
+      changed = true;
+    }
+
+    state.weeklyGoal = existing;
+    if (changed) {
+      save(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
+    }
+  }
+}
+
+function getWeeklyUsedSeconds(weeklyGoal, includeCurrentSession) {
+  if (!weeklyGoal) {
+    return 0;
+  }
+
+  const fromHistory = state.history.reduce((sum, entry) => {
+    if (!entry) {
+      return sum;
+    }
+
+    const durationSeconds = Math.max(0, Number(entry.durationSeconds) || 0);
+    if (!durationSeconds) {
+      return sum;
+    }
+
+    if (entry.weekKey) {
+      return entry.weekKey === weeklyGoal.weekKey ? sum + durationSeconds : sum;
+    }
+
+    if (entry.date && isDateWithinRange(entry.date, weeklyGoal.weekStartIso, weeklyGoal.weekEndIso)) {
+      return sum + durationSeconds;
+    }
+
+    return sum;
+  }, 0);
+
+  if (!includeCurrentSession || !state.session) {
+    return fromHistory;
+  }
+
+  if (state.session.weekKey !== weeklyGoal.weekKey) {
+    return fromHistory;
+  }
+
+  return fromHistory + getLiveSessionSeconds(state.session);
+}
+
+function applyWeeklyRewardIfEligible(session) {
+  ensureCurrentWeeklyGoal();
+  const weeklyGoal = state.weeklyGoal;
+  if (!weeklyGoal || !session) {
+    return;
+  }
+
+  const previousUsedSeconds = getWeeklyUsedSeconds(weeklyGoal, false);
+  const sessionSeconds = Math.max(0, Number(session.durationSeconds) || 0);
+  const totalUsedSeconds = previousUsedSeconds + sessionSeconds;
+  const targetSeconds = Math.max(0, weeklyGoal.targetMinutes * 60);
+
+  if (!weeklyGoal.achieved && totalUsedSeconds >= targetSeconds) {
+    weeklyGoal.achieved = true;
+    weeklyGoal.achievedAt = new Date().toISOString();
+  }
+
+  session.weekKey = weeklyGoal.weekKey;
+  session.rewardBonusPoints = 0;
+
+  if (!weeklyGoal.rewardGranted && totalUsedSeconds >= targetSeconds) {
+    const bonusPoints = computeRewardBonusPoints(weeklyGoal.rewardDefinition, session.points);
+    if (bonusPoints > 0) {
+      session.points += bonusPoints;
+      session.rewardBonusPoints = bonusPoints;
+      weeklyGoal.rewardGranted = true;
+      weeklyGoal.rewardGrantedAt = new Date().toISOString();
+      weeklyGoal.rewardBonusPoints = Math.max(
+        0,
+        Number(weeklyGoal.rewardBonusPoints) || 0
+      ) + bonusPoints;
+      setFeedback(`Wochenziel erfüllt: ${getRewardLabel(weeklyGoal.rewardDefinition)}.`, true);
+      showBigFeedback(`Wochenziel geschafft! +${bonusPoints} XP`, true);
+    }
+  }
+
+  save(STORAGE_KEYS.weeklyGoal, weeklyGoal);
+}
+
+function renderWeeklyGoalHint() {
+  if (!el.weeklyGoalHint) {
+    return;
+  }
+
+  ensureCurrentWeeklyGoal();
+  const weeklyGoal = state.weeklyGoal;
+  if (!weeklyGoal) {
+    el.weeklyGoalHint.textContent = "Wochenziel nicht verfügbar.";
+    return;
+  }
+
+  const usedSeconds = getWeeklyUsedSeconds(weeklyGoal, true);
+  const usedMinutes = Math.floor(secondsToMinutes(usedSeconds));
+  const targetMinutes = weeklyGoal.targetMinutes;
+  const missing = Math.max(0, targetMinutes - usedMinutes);
+
+  let status = `Noch ${missing} Min`;
+  if (usedMinutes >= targetMinutes) {
+    status = weeklyGoal.rewardGranted ? "Ziel erreicht + Bonus" : "Ziel erreicht";
+  }
+
+  el.weeklyGoalHint.textContent = `${usedMinutes} / ${targetMinutes} Min · ${status}`;
+}
+
+function renderAdminState() {
+  ensureCurrentWeeklyGoal();
+  const weeklyGoal = state.weeklyGoal;
+  if (!weeklyGoal) {
+    return;
+  }
+
+  const unlocked = state.adminSessionUnlocked;
+  el.adminLoginCard.classList.toggle("hidden", unlocked);
+  el.adminDashboardCard.classList.toggle("hidden", !unlocked);
+
+  if (!unlocked) {
+    return;
+  }
+
+  const usedSeconds = getWeeklyUsedSeconds(weeklyGoal, true);
+  const usedMinutes = Math.floor(secondsToMinutes(usedSeconds));
+  const target = weeklyGoal.targetMinutes;
+  const progress = target > 0 ? Math.min(100, Math.round((usedMinutes / target) * 100)) : 0;
+
+  el.adminWeekLabel.textContent = `Woche: ${weeklyGoal.weekKey}`;
+  el.adminDeadlineLabel.textContent = `Deadline: ${formatDeadlineText(weeklyGoal.weekEndIso)}`;
+  el.adminProgressFill.style.width = `${progress}%`;
+  el.adminProgressText.textContent = `${usedMinutes} / ${target} Min`;
+  el.adminRemainingText.textContent =
+    usedMinutes >= target ? "Ziel erfüllt." : `Noch ${Math.max(0, target - usedMinutes)} Min offen.`;
+
+  el.adminRewardText.textContent = getRewardLabel(weeklyGoal.rewardDefinition);
+
+  let rewardStatus = "offen";
+  if (weeklyGoal.rewardGranted) {
+    rewardStatus = `Belohnung erhalten (+${Math.max(0, weeklyGoal.rewardBonusPoints || 0)} XP)`;
+  } else if (usedMinutes >= target) {
+    rewardStatus = "Ziel erreicht · Bonus mit nächster Runde";
+  }
+  el.adminRewardStatus.textContent = rewardStatus;
+
+  el.weeklyTargetInput.value = String(target);
+  el.adminBackupPinInput.value = "";
+  el.adminBackupPinInput.placeholder = state.adminConfig.backupPin ? "Bereits gesetzt" : "Neue PIN";
+}
+
+function handleAdminUnlock() {
+  const input = el.adminPasswordInput.value.trim();
+  if (!input) {
+    setAdminAuthFeedback("Bitte Passwort oder Backup-PIN eingeben.", false);
+    return;
+  }
+
+  const dynamicAccepted = isDynamicPasswordValid(input, new Date());
+  const backupAccepted =
+    normalizeSecret(state.adminConfig.backupPin) &&
+    normalizeSecret(input) === normalizeSecret(state.adminConfig.backupPin);
+
+  if (!dynamicAccepted && !backupAccepted) {
+    setAdminAuthFeedback("Zugangscode ist ungültig.", false);
+    return;
+  }
+
+  state.adminSessionUnlocked = true;
+  el.adminPasswordInput.value = "";
+  setAdminAuthFeedback("Admin-Bereich entsperrt.", true);
+  renderAdminState();
+}
+
+function lockAdminSession() {
+  state.adminSessionUnlocked = false;
+  setAdminSettingsFeedback("", true);
+  renderAdminState();
+}
+
+function handleSaveWeeklyTarget() {
+  if (!state.adminSessionUnlocked || !state.weeklyGoal) {
+    return;
+  }
+
+  const target = sanitizeTargetMinutes(el.weeklyTargetInput.value, state.weeklyGoal.targetMinutes);
+  state.weeklyGoal.targetMinutes = target;
+
+  const usedMinutes = secondsToMinutes(getWeeklyUsedSeconds(state.weeklyGoal, true));
+  if (!state.weeklyGoal.rewardGranted) {
+    state.weeklyGoal.achieved = usedMinutes >= target;
+  }
+
+  save(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
+  renderAdminState();
+  renderWeeklyGoalHint();
+  setAdminSettingsFeedback(`Wochenziel gespeichert: ${target} Minuten.`, true);
+}
+
+function handleSaveBackupPin() {
+  if (!state.adminSessionUnlocked) {
+    return;
+  }
+
+  const value = el.adminBackupPinInput.value.trim();
+  if (value.length < 4) {
+    setAdminSettingsFeedback("Backup-PIN muss mindestens 4 Zeichen haben.", false);
+    return;
+  }
+
+  state.adminConfig.backupPin = value;
+  save(STORAGE_KEYS.admin, state.adminConfig);
+  el.adminBackupPinInput.value = "";
+  renderAdminState();
+  setAdminSettingsFeedback("Backup-PIN gespeichert.", true);
+}
+
+function setAdminAuthFeedback(text, ok) {
+  el.adminAuthFeedback.textContent = text;
+  el.adminAuthFeedback.className = `feedback ${ok ? "ok" : "err"}`;
+}
+
+function setAdminSettingsFeedback(text, ok) {
+  el.adminSettingsFeedback.textContent = text;
+  el.adminSettingsFeedback.className = `feedback ${ok ? "ok" : "err"}`;
 }
 
 function load(key, fallback) {
@@ -625,6 +1107,211 @@ function load(key, fallback) {
 
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+  scheduleServerPush();
+}
+
+function saveLocalOnly(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+async function hydrateFromServer() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1800);
+
+  try {
+    const response = await fetch("/api/state", {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      setRemoteStatus(false, "Nur lokal gespeichert (kein API-Server).");
+      return;
+    }
+
+    const payload = await response.json();
+    const serverState = payload?.state;
+    if (!serverState || typeof serverState !== "object") {
+      setRemoteStatus(false, "Nur lokal gespeichert (ungültige Serverantwort).");
+      return;
+    }
+
+    remoteSync.available = true;
+    remoteSync.attempted = true;
+    remoteSync.status = "Serverspeicher aktiv.";
+    renderStorageStatus();
+
+    const localSnapshot = buildServerStatePayload();
+    if (isStatePayloadEmpty(serverState) && !isStatePayloadEmpty(localSnapshot)) {
+      remoteSync.pendingPush = true;
+      await pushStateToServer();
+      return;
+    }
+
+    applyServerState(serverState);
+  } catch {
+    setRemoteStatus(false, "Nur lokal gespeichert (Server nicht erreichbar).");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function applyServerState(serverState) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(serverState, key);
+
+  if (has(STORAGE_KEYS.history)) {
+    state.history = Array.isArray(serverState[STORAGE_KEYS.history])
+      ? serverState[STORAGE_KEYS.history]
+      : [];
+    saveLocalOnly(STORAGE_KEYS.history, state.history);
+  }
+  if (has(STORAGE_KEYS.mistakes)) {
+    const mistakes = serverState[STORAGE_KEYS.mistakes];
+    state.mistakes = mistakes && typeof mistakes === "object" ? mistakes : {};
+    saveLocalOnly(STORAGE_KEYS.mistakes, state.mistakes);
+  }
+  if (has(STORAGE_KEYS.customVocabulary)) {
+    state.customVocabulary = Array.isArray(serverState[STORAGE_KEYS.customVocabulary])
+      ? serverState[STORAGE_KEYS.customVocabulary]
+      : [];
+    saveLocalOnly(STORAGE_KEYS.customVocabulary, state.customVocabulary);
+  }
+  if (has(STORAGE_KEYS.settings)) {
+    state.settings = {
+      ...DEFAULT_SETTINGS,
+      ...state.settings,
+      ...(serverState[STORAGE_KEYS.settings] || {})
+    };
+    saveLocalOnly(STORAGE_KEYS.settings, state.settings);
+  }
+  if (has(STORAGE_KEYS.admin)) {
+    state.adminConfig = {
+      ...DEFAULT_ADMIN_CONFIG,
+      ...(serverState[STORAGE_KEYS.admin] || {})
+    };
+    saveLocalOnly(STORAGE_KEYS.admin, state.adminConfig);
+  }
+  if (has(STORAGE_KEYS.weeklyGoal)) {
+    state.weeklyGoal = serverState[STORAGE_KEYS.weeklyGoal] || null;
+    saveLocalOnly(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
+  }
+
+  normalizeHistoryEntries();
+  ensureCurrentWeeklyGoal();
+  applySettingsToControls();
+  refreshUnitFilters();
+  historyModule.renderHistory();
+  renderAdminState();
+  renderWeeklyGoalHint();
+  renderIdleState();
+  updateGamificationWidgets(0);
+}
+
+function setRemoteStatus(available, statusText) {
+  remoteSync.available = available;
+  remoteSync.attempted = true;
+  remoteSync.status = statusText;
+  renderStorageStatus();
+}
+
+function renderStorageStatus() {
+  if (!el.storageStatus) {
+    return;
+  }
+  const prefix = remoteSync.available ? "Speicher: Server" : "Speicher: Lokal";
+  const text = remoteSync.status || (remoteSync.available ? "Serverspeicher aktiv." : "Nur lokal gespeichert.");
+  el.storageStatus.textContent = `${prefix} · ${text}`;
+}
+
+function scheduleServerPush() {
+  if (!remoteSync.available) {
+    return;
+  }
+
+  remoteSync.pendingPush = true;
+  if (remoteSync.timerId) {
+    clearTimeout(remoteSync.timerId);
+  }
+
+  remoteSync.timerId = setTimeout(() => {
+    remoteSync.timerId = null;
+    void pushStateToServer();
+  }, 450);
+}
+
+async function pushStateToServer() {
+  if (!remoteSync.available || remoteSync.pushInFlight || !remoteSync.pendingPush) {
+    return;
+  }
+
+  remoteSync.pushInFlight = true;
+  remoteSync.pendingPush = false;
+
+  try {
+    const payload = buildServerStatePayload();
+    const response = await fetch("/api/state", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error("state_push_failed");
+    }
+
+    remoteSync.status = `Synchronisiert: ${new Date().toLocaleTimeString("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit"
+    })}`;
+    renderStorageStatus();
+  } catch {
+    remoteSync.available = false;
+    remoteSync.status = "Sync fehlgeschlagen. Lokal weiter gespeichert.";
+    renderStorageStatus();
+  } finally {
+    remoteSync.pushInFlight = false;
+    if (remoteSync.pendingPush) {
+      void pushStateToServer();
+    }
+  }
+}
+
+function buildServerStatePayload() {
+  return {
+    [STORAGE_KEYS.history]: state.history,
+    [STORAGE_KEYS.mistakes]: state.mistakes,
+    [STORAGE_KEYS.customVocabulary]: state.customVocabulary,
+    [STORAGE_KEYS.settings]: state.settings,
+    [STORAGE_KEYS.admin]: state.adminConfig,
+    [STORAGE_KEYS.weeklyGoal]: state.weeklyGoal
+  };
+}
+
+function isStatePayloadEmpty(payload) {
+  if (!payload || typeof payload !== "object") {
+    return true;
+  }
+
+  const history = Array.isArray(payload[STORAGE_KEYS.history]) ? payload[STORAGE_KEYS.history] : [];
+  const mistakes = payload[STORAGE_KEYS.mistakes];
+  const custom = Array.isArray(payload[STORAGE_KEYS.customVocabulary])
+    ? payload[STORAGE_KEYS.customVocabulary]
+    : [];
+  const admin = payload[STORAGE_KEYS.admin];
+  const weeklyGoal = payload[STORAGE_KEYS.weeklyGoal];
+
+  return (
+    history.length === 0 &&
+    custom.length === 0 &&
+    (!mistakes || Object.keys(mistakes).length === 0) &&
+    (!admin || !admin.backupPin) &&
+    !weeklyGoal
+  );
 }
 
 function updateGamificationWidgets(extraSessionPoints) {

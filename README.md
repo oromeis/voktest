@@ -8,9 +8,9 @@ Mobile-first Vokabeltrainer für Englisch (Klasse 6) mit Lernmodus, Quizmodus, T
    ```bash
    cd /Users/Nemesis/Downloads/github/voktest
    ```
-2. Lokalen Server starten (Beispiel):
+2. Lokalen App-Server starten:
    ```bash
-   python3 -m http.server 5173
+   npm run dev
    ```
 3. Im Browser öffnen:
    ```
@@ -34,6 +34,7 @@ Hinweis: Für iPhone/iPad im selben WLAN mit `http://<deine-ip>:5173` öffnen un
 - Lernfortschritt-Reset (Verlauf, Fehlerstatistik, XP/Level)
 - PWA-Grundlage (Manifest + Service Worker)
 - Geführte Tab-Navigation: `Start` (Begrüßung + Modus + Start), `Üben`, `Verlauf`, `Einstellungen`
+- Admin-/Wochenziel-Seite mit serverseitiger Speicherung (API `/api/state`)
 
 ## Projektstruktur (modular)
 
@@ -90,21 +91,23 @@ english;german;unit;lesson;page
 ]
 ```
 
-## Deployment: GitHub Pages + IONOS-Domain
+## Speicherung
 
-Empfohlen: eigene Subdomain, z. B. `vokabeln.deinedomain.de`.
+Aktuell werden Lernstand, Wochenziele, Admin-Einstellungen und Imports serverseitig in `server-data/state.json` gespeichert.
 
-1. Neues GitHub-Repository anlegen (leer, z. B. `voktest`).
-2. Dieses Projekt in das Repo pushen (inkl. `.github/workflows/deploy-pages.yml`).
-3. In GitHub: `Settings -> Pages -> Source: GitHub Actions`.
-4. In IONOS DNS:
-   - Record-Typ: `CNAME`
-   - Hostname: `vokabeln` (oder Wunschname)
-   - Ziel: `<dein-github-user>.github.io`
-5. In diesem Projekt Datei `CNAME` anlegen (oder `CNAME.example` kopieren) mit genau:
-   - `vokabeln.deinedomain.de`
-6. Commit + Push. Nach dem Action-Lauf ist die App unter der Domain erreichbar.
+## Deployment-Hinweis (wichtig)
+
+Serverseitige Speicherung benötigt einen Node.js-Host (VPS/Cloud/Container).
+
+- **GitHub Pages allein reicht dafür nicht**, da dort keine eigene Backend-API läuft.
+- Für produktive Nutzung mit zentralen Daten daher auf Node-fähigem Hosting deployen (z. B. IONOS VPS, Render, Railway, Fly.io).
 
 Hinweise:
-- DNS kann bis zu 15-60 Minuten brauchen.
-- HTTPS stellt GitHub Pages automatisch bereit, sobald DNS korrekt ist.
+- `server-data/state.json` enthält die persistierten Nutzdaten und sollte in Backups enthalten sein.
+
+## Synology (Docker) Schnellstart
+
+Für Self-Hosting auf Synology mit Datei-Persistenz:
+
+- Siehe: [SYNOLOGY-SETUP.md](./SYNOLOGY-SETUP.md)
+- Kernpunkt: `server-data` als Docker-Volume mounten, damit `state.json` erhalten bleibt.

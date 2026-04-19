@@ -36,6 +36,10 @@
             <p id="motivationLine" class="motivation-line">
               Jede richtige Antwort bringt dich zum nächsten Level.
             </p>
+            <div class="goal-hint-card" aria-live="polite">
+              <p class="goal-hint-title">Wochenziel</p>
+              <p id="weeklyGoalHint" class="goal-hint-text">0 / 120 Min · offen</p>
+            </div>
           </article>
 
           <article class="panel setup-card" aria-label="Start-Einstellungen">
@@ -179,6 +183,7 @@
         <section class="view hidden" data-section-panel="settings">
           <section class="panel import-panel">
             <h2>Einstellungen</h2>
+            <p id="storageStatus" class="storage-status">Speicher: Nur lokal (kein Server verbunden).</p>
             <h3>Vokabeln importieren</h3>
             <p>
               Format 1: JSON-Array mit Feldern <code>english</code> und <code>german</code>.<br />
@@ -244,6 +249,87 @@
             <p id="settingsFeedback" class="feedback"></p>
           </section>
         </section>
+
+        <section class="view hidden" data-section-panel="admin">
+          <section class="panel admin-panel">
+            <h2>Admin · Eltern/Lehrer</h2>
+
+            <div id="adminLoginCard" class="admin-card">
+              <h3>Zugang</h3>
+              <label>
+                Passwort oder Backup-PIN
+                <input
+                  id="adminPasswordInput"
+                  type="password"
+                  placeholder="Code eingeben"
+                  autocapitalize="none"
+                  autocomplete="off"
+                />
+              </label>
+              <div class="action-row">
+                <button id="adminUnlockBtn" class="primary-btn icon-btn" type="button" title="Admin entsperren">
+                  <span class="btn-icon" aria-hidden="true">🔓</span>
+                  <span>Entsperren</span>
+                </button>
+              </div>
+              <p id="adminAuthFeedback" class="feedback"></p>
+            </div>
+
+            <div id="adminDashboardCard" class="admin-card hidden">
+              <div class="admin-head">
+                <h3>Wochenziel-Kontrolle</h3>
+                <button id="adminLockBtn" class="ghost-btn icon-btn" type="button" title="Admin sperren">
+                  <span class="btn-icon" aria-hidden="true">🔒</span>
+                  <span>Sperren</span>
+                </button>
+              </div>
+
+              <p id="adminWeekLabel" class="admin-meta">Woche: -</p>
+              <p id="adminDeadlineLabel" class="admin-meta">Deadline: -</p>
+
+              <div class="admin-progress">
+                <div class="admin-progress-track"><span id="adminProgressFill"></span></div>
+                <p id="adminProgressText" class="admin-progress-text">0 / 120 Min</p>
+                <p id="adminRemainingText" class="admin-progress-sub">Noch 120 Min</p>
+              </div>
+
+              <div class="summary-grid">
+                <article class="stat-box">
+                  <p class="k">Belohnung</p>
+                  <p id="adminRewardText" class="v">-</p>
+                </article>
+                <article class="stat-box">
+                  <p class="k">Status</p>
+                  <p id="adminRewardStatus" class="v">offen</p>
+                </article>
+              </div>
+
+              <label>
+                Ziel pro Woche (Minuten)
+                <input id="weeklyTargetInput" type="number" min="10" max="1200" step="5" />
+              </label>
+              <div class="action-row">
+                <button id="saveWeeklyTargetBtn" class="secondary-btn icon-btn" type="button" title="Ziel speichern">
+                  <span class="btn-icon" aria-hidden="true">💾</span>
+                  <span>Ziel speichern</span>
+                </button>
+              </div>
+
+              <label>
+                Backup-PIN (mind. 4 Zeichen)
+                <input id="adminBackupPinInput" type="password" minlength="4" autocomplete="off" />
+              </label>
+              <div class="action-row">
+                <button id="saveBackupPinBtn" class="secondary-btn icon-btn" type="button" title="PIN speichern">
+                  <span class="btn-icon" aria-hidden="true">🔑</span>
+                  <span>PIN speichern</span>
+                </button>
+              </div>
+
+              <p id="adminSettingsFeedback" class="feedback"></p>
+            </div>
+          </section>
+        </section>
       </main>
 
       <nav class="tabbar" aria-label="Hauptnavigation">
@@ -280,6 +366,16 @@
         >
           <span class="tab-icon" aria-hidden="true">⚙</span>
           <span class="tab-text">Einst.</span>
+        </button>
+        <button
+          class="tab-btn"
+          type="button"
+          data-section-target="admin"
+          aria-label="Admin"
+          title="Admin"
+        >
+          <span class="tab-icon" aria-hidden="true">🔐</span>
+          <span class="tab-text">Admin</span>
         </button>
       </nav>
     </div>

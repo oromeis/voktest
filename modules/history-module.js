@@ -14,6 +14,9 @@ export function createHistoryModule({ state, elements, persistHistory }) {
       correct: session.correct,
       wrong: session.wrong,
       points: session.points,
+      durationSeconds: Math.max(0, Math.round(Number(session.durationSeconds) || 0)),
+      rewardBonusPoints: Math.max(0, Number(session.rewardBonusPoints) || 0),
+      weekKey: typeof session.weekKey === "string" ? session.weekKey : "",
       percent,
       grade
     };
@@ -34,6 +37,7 @@ export function createHistoryModule({ state, elements, persistHistory }) {
       ["Falsch", String(result.wrong)],
       ["Trefferquote", `${result.percent}%`],
       ["Punkte", String(result.points)],
+      ["Zeit", formatDuration(result.durationSeconds)],
       ["Modus", labelMode(result.mode)]
     ];
 
@@ -87,13 +91,18 @@ export function createHistoryModule({ state, elements, persistHistory }) {
     ).toFixed(2);
     const bestRun = Math.max(...state.history.map((item) => item.correct));
     const totalAnswered = state.history.reduce((sum, item) => sum + item.total, 0);
+    const totalDurationSeconds = state.history.reduce(
+      (sum, item) => sum + Math.max(0, Number(item.durationSeconds) || 0),
+      0
+    );
 
     const cards = [
       ["Runden", String(rounds)],
       ["Ø Trefferquote", `${avgPercent}%`],
       ["Ø Note", avgGrade],
       ["Bester Durchlauf", `${bestRun} richtig`],
-      ["Antworten gesamt", String(totalAnswered)]
+      ["Antworten gesamt", String(totalAnswered)],
+      ["Trainingszeit", formatDuration(totalDurationSeconds)]
     ];
 
     cards.forEach(([key, value]) => {
@@ -109,7 +118,7 @@ export function createHistoryModule({ state, elements, persistHistory }) {
       item.innerHTML = `
         <p class="recent-head">${formatRunDate(run.date)} · ${labelMode(run.mode)}</p>
         <p>${run.correct}/${run.total} richtig · ${run.percent}% · Note ${run.grade}</p>
-        <p class="recent-sub">Richtung: ${run.direction.toUpperCase()} · Punkte: ${run.points}</p>
+        <p class="recent-sub">Richtung: ${run.direction.toUpperCase()} · Punkte: ${run.points} · Zeit: ${formatDuration(run.durationSeconds)}</p>
       `;
       elements.recentRunsList.append(item);
     });
@@ -120,6 +129,18 @@ export function createHistoryModule({ state, elements, persistHistory }) {
     renderSummary,
     renderHistory
   };
+}
+
+function formatDuration(valueSeconds) {
+  const seconds = Math.max(0, Math.round(Number(valueSeconds) || 0));
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours <= 0) {
+    return `${minutes} min`;
+  }
+  return `${hours} h ${minutes} min`;
 }
 
 function formatRunDate(value) {

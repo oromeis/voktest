@@ -1,10 +1,11 @@
-const CACHE_NAME = "voktest-v7";
+const CACHE_NAME = "voktest-v9";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./modules/common.js",
+  "./modules/admin-utils.js",
   "./modules/history-module.js",
   "./modules/import-module.js",
   "./data/vocabulary.js",
@@ -39,6 +40,13 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
   const sameOrigin = url.origin === self.location.origin;
+  const isApiRequest = sameOrigin && url.pathname.startsWith("/api/");
+
+  if (isApiRequest) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   const isAppShell =
     sameOrigin &&
     (url.pathname.endsWith("/") ||

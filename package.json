@@ -1,0 +1,12 @@
+{
+  "name": "voktest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VokTest with server-side state persistence",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

@@ -1,0 +1,15 @@
+services:
+  voktest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voktest
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
+      HOST: 0.0.0.0
+      PORT: 5173
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./server-data:/app/server-data
