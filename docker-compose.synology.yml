@@ -1,7 +1,7 @@
 services:
   voktest:
     build:
-      context: .
+      context: /volume2/Docker/voktest
       dockerfile: Dockerfile
     container_name: voktest
     restart: unless-stopped
@@ -12,4 +12,4 @@ services:
     ports:
       - "5173:5173"
     volumes:
-      - ./server-data:/app/server-data
+      - /volume2/Docker/voktest/server-data:/app/server-data
