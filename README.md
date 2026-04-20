@@ -99,15 +99,21 @@ Aktuell werden Lernstand, Wochenziele, Admin-Einstellungen und Imports serversei
 
 In `Einstellungen` wird die laufende Version angezeigt (`Version: ...`).
 
-- lokal (mit `.git` im Projekt): automatisch aktueller Short-Commit
-- Docker/Synology: über Build-Arg `APP_VERSION` (empfohlen = Git-Commit)
+Reihenfolge der Quelle:
 
-Beispiel:
+1. `.git` im Container (Short-Commit, empfohlen)
+2. Datei `VERSION` (Fallback)
+3. `APP_VERSION` Env/Fallback
+
+Für Synology ist kein Build-Arg mehr nötig. Wichtig ist nur der Read-Only-Mount von `.git`
+in `docker-compose.synology.yml`.
+
+Einfacher Deploy:
 
 ```bash
 cd /volume2/Docker/voktest
-APP_VERSION=$(git rev-parse --short HEAD) docker compose -f docker-compose.synology.yml build --no-cache
-docker compose -f docker-compose.synology.yml up -d
+git pull
+docker compose -f docker-compose.synology.yml up -d --build
 ```
 
 ## Deployment-Hinweis (wichtig)

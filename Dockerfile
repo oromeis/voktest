@@ -2,8 +2,6 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-ARG APP_VERSION=unknown
-
 COPY package.json ./
 COPY server.js ./
 COPY index.html ./
@@ -19,7 +17,6 @@ COPY server-data ./server-data
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=5173
-ENV APP_VERSION=${APP_VERSION}
 
 EXPOSE 5173
 

@@ -1,8 +1,8 @@
 import http from "node:http";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
 
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 5173);
@@ -10,6 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const ROOT_DIR = path.dirname(__filename);
 const DATA_DIR = path.join(ROOT_DIR, "server-data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
+const VERSION_FILE = path.join(ROOT_DIR, "VERSION");
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const APP_VERSION_INFO = resolveAppVersionInfo();
 
@@ -163,14 +164,19 @@ async function handleApi(request, response, pathname) {
 }
 
 function resolveAppVersionInfo() {
+  const fromGit = readGitCommitShortFromGitDir();
+  if (fromGit) {
+    return { version: fromGit, source: "git" };
+  }
+
+  const fromVersionFile = readVersionFile();
+  if (fromVersionFile) {
+    return { version: fromVersionFile, source: "file" };
+  }
+
   const fromEnv = sanitizeVersion(process.env.APP_VERSION);
   if (fromEnv) {
     return { version: fromEnv, source: "env" };
-  }
-
-  const fromGit = readGitCommitShort();
-  if (fromGit) {
-    return { version: fromGit, source: "git" };
   }
 
   const fromPackage = sanitizeVersion(process.env.npm_package_version);
@@ -181,17 +187,70 @@ function resolveAppVersionInfo() {
   return { version: "unknown", source: "fallback" };
 }
 
-function readGitCommitShort() {
+function readGitCommitShortFromGitDir() {
   try {
-    const result = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
-      cwd: ROOT_DIR,
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8"
-    }).trim();
-    return sanitizeVersion(result);
+    const gitDir = path.join(ROOT_DIR, ".git");
+    const headRaw = readText(path.join(gitDir, "HEAD"));
+    if (!headRaw) {
+      return "";
+    }
+
+    const head = headRaw.trim();
+    let commit = "";
+
+    if (head.startsWith("ref:")) {
+      const ref = head.slice(4).trim();
+      commit = readText(path.join(gitDir, ref)).trim();
+      if (!commit) {
+        commit = readPackedRef(gitDir, ref);
+      }
+    } else {
+      commit = head;
+    }
+
+    const sanitized = sanitizeVersion(commit);
+    if (!/^[0-9a-fA-F]{7,40}$/.test(sanitized)) {
+      return "";
+    }
+    return sanitized.slice(0, 7).toLowerCase();
   } catch {
     return "";
   }
+}
+
+function readVersionFile() {
+  const raw = readText(VERSION_FILE);
+  if (!raw) {
+    return "";
+  }
+  return sanitizeVersion(raw.trim());
+}
+
+function readText(filePath) {
+  try {
+    return fsSync.readFileSync(filePath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function readPackedRef(gitDir, refName) {
+  const content = readText(path.join(gitDir, "packed-refs"));
+  if (!content) {
+    return "";
+  }
+
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("^")) {
+      continue;
+    }
+    const [hash, ref] = trimmed.split(" ");
+    if (ref === refName) {
+      return hash || "";
+    }
+  }
+  return "";
 }
 
 function sanitizeVersion(value) {

@@ -3,8 +3,6 @@ services:
     build:
       context: /volume2/Docker/voktest
       dockerfile: Dockerfile
-      args:
-        APP_VERSION: ${APP_VERSION:-unknown}
     container_name: voktest
     restart: unless-stopped
     environment:
@@ -15,3 +13,4 @@ services:
       - "5173:5173"
     volumes:
       - /volume2/Docker/voktest/server-data:/app/server-data
+      - /volume2/Docker/voktest/.git:/app/.git:ro
