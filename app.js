@@ -184,7 +184,6 @@ void init();
 
 async function init() {
   normalizeHistoryEntries();
-  ensureCurrentWeeklyGoal();
   bindEvents();
   bindSectionNavigation();
   bindSessionVisibilityTracking();
@@ -200,6 +199,10 @@ async function init() {
   registerServiceWorker();
 
   await hydrateFromServer();
+  ensureCurrentWeeklyGoal();
+  renderAdminState();
+  renderWeeklyGoalHint();
+  renderIdleState();
   startRemoteReconnectLoop();
 }
 
@@ -855,6 +858,23 @@ function resolveWeeklyGoalState(localGoal, serverGoal) {
   const localWeekKey = typeof localGoal.weekKey === "string" ? localGoal.weekKey : "";
   const serverWeekKey = typeof serverGoal.weekKey === "string" ? serverGoal.weekKey : "";
   if (!localWeekKey || !serverWeekKey || localWeekKey !== serverWeekKey) {
+    const currentWeekKey = getWeekContext(new Date()).weekKey;
+    const localIsCurrent = localWeekKey === currentWeekKey;
+    const serverIsCurrent = serverWeekKey === currentWeekKey;
+
+    if (localIsCurrent && !serverIsCurrent) {
+      return { value: localGoal, preferLocal: true };
+    }
+    if (serverIsCurrent && !localIsCurrent) {
+      return { value: serverGoal, preferLocal: false };
+    }
+
+    const localUpdatedMs = getWeeklyGoalUpdatedMs(localGoal);
+    const serverUpdatedMs = getWeeklyGoalUpdatedMs(serverGoal);
+    if (localUpdatedMs > serverUpdatedMs) {
+      return { value: localGoal, preferLocal: true };
+    }
+
     return { value: serverGoal, preferLocal: false };
   }
 
@@ -1164,6 +1184,9 @@ function load(key, fallback) {
 
 function save(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+  if (!remoteSync.attempted) {
+    return;
+  }
   scheduleServerPush();
 }
 
