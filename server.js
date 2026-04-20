@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 5173);
@@ -10,6 +11,7 @@ const ROOT_DIR = path.dirname(__filename);
 const DATA_DIR = path.join(ROOT_DIR, "server-data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const APP_VERSION_INFO = resolveAppVersionInfo();
 
 const STATE_KEYS = [
   "voktest_history_v1",
@@ -116,6 +118,19 @@ function readRequestBody(request) {
 }
 
 async function handleApi(request, response, pathname) {
+  if (pathname === "/api/version") {
+    if (request.method !== "GET") {
+      sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+      return;
+    }
+    sendJson(response, 200, {
+      ok: true,
+      version: APP_VERSION_INFO.version,
+      source: APP_VERSION_INFO.source
+    });
+    return;
+  }
+
   if (pathname !== "/api/state") {
     sendJson(response, 404, { ok: false, error: "not_found" });
     return;
@@ -145,6 +160,49 @@ async function handleApi(request, response, pathname) {
   }
 
   sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+}
+
+function resolveAppVersionInfo() {
+  const fromEnv = sanitizeVersion(process.env.APP_VERSION);
+  if (fromEnv) {
+    return { version: fromEnv, source: "env" };
+  }
+
+  const fromGit = readGitCommitShort();
+  if (fromGit) {
+    return { version: fromGit, source: "git" };
+  }
+
+  const fromPackage = sanitizeVersion(process.env.npm_package_version);
+  if (fromPackage) {
+    return { version: `v${fromPackage}`, source: "package" };
+  }
+
+  return { version: "unknown", source: "fallback" };
+}
+
+function readGitCommitShort() {
+  try {
+    const result = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
+      cwd: ROOT_DIR,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8"
+    }).trim();
+    return sanitizeVersion(result);
+  } catch {
+    return "";
+  }
+}
+
+function sanitizeVersion(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  return trimmed.replace(/[^a-zA-Z0-9._-]/g, "");
 }
 
 async function serveStatic(response, pathname) {

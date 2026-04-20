@@ -95,6 +95,21 @@ english;german;unit;lesson;page
 
 Aktuell werden Lernstand, Wochenziele, Admin-Einstellungen und Imports serverseitig in `server-data/state.json` gespeichert.
 
+## Versionsanzeige (Commit)
+
+In `Einstellungen` wird die laufende Version angezeigt (`Version: ...`).
+
+- lokal (mit `.git` im Projekt): automatisch aktueller Short-Commit
+- Docker/Synology: über Build-Arg `APP_VERSION` (empfohlen = Git-Commit)
+
+Beispiel:
+
+```bash
+cd /volume2/Docker/voktest
+APP_VERSION=$(git rev-parse --short HEAD) docker compose -f docker-compose.synology.yml build --no-cache
+docker compose -f docker-compose.synology.yml up -d
+```
+
 ## Deployment-Hinweis (wichtig)
 
 Serverseitige Speicherung benötigt einen Node.js-Host (VPS/Cloud/Container).

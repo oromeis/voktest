@@ -123,6 +123,7 @@ const el = {
   resetProgressBtn: document.getElementById("resetProgressBtn"),
   settingsFeedback: document.getElementById("settingsFeedback"),
   storageStatus: document.getElementById("storageStatus"),
+  appVersion: document.getElementById("appVersion"),
   installBtn: document.getElementById("installBtn"),
   weeklyGoalHint: document.getElementById("weeklyGoalHint"),
   adminLoginCard: document.getElementById("adminLoginCard"),
@@ -196,6 +197,7 @@ async function init() {
   renderWeeklyGoalHint();
   renderIdleState();
   renderStorageStatus();
+  void hydrateVersionInfo();
   registerServiceWorker();
 
   await hydrateFromServer();
@@ -1313,6 +1315,39 @@ function renderStorageStatus() {
   const prefix = remoteSync.available ? "Speicher: Server" : "Speicher: Lokal";
   const text = remoteSync.status || (remoteSync.available ? "Serverspeicher aktiv." : "Nur lokal gespeichert.");
   el.storageStatus.textContent = `${prefix} · ${text}`;
+}
+
+async function hydrateVersionInfo() {
+  if (!el.appVersion) {
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch("/api/version", {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error("version_fetch_failed");
+    }
+
+    const payload = await response.json();
+    const version = typeof payload?.version === "string" && payload.version.trim()
+      ? payload.version.trim()
+      : "unknown";
+    el.appVersion.textContent = `Version: ${version}`;
+  } catch {
+    el.appVersion.textContent = "Version: unbekannt";
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function startRemoteReconnectLoop() {

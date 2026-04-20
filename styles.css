@@ -628,6 +628,13 @@ select + .action-row:not(.mt-10) {
   color: #1f5d76;
 }
 
+.app-version {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #365866;
+}
+
 .admin-panel {
   display: grid;
   gap: 12px;
