@@ -45,6 +45,21 @@ body {
   gap: 12px;
 }
 
+.auth-gate {
+  display: grid;
+  gap: 10px;
+}
+
+#loginPinBlock,
+#pinSetupBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-gate h2 {
+  margin-bottom: 0;
+}
+
 .panel {
   border-radius: var(--radius);
   background: var(--card);
@@ -57,6 +72,14 @@ body {
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .badge {
@@ -638,6 +661,18 @@ select + .action-row:not(.mt-10) {
 .admin-panel {
   display: grid;
   gap: 12px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.checkbox-row input {
+  width: auto;
+  min-height: auto;
 }
 
 .admin-card {

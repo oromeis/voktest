@@ -12,13 +12,104 @@
   </head>
   <body>
     <div class="app-shell">
+      <section id="authGate" class="panel auth-gate">
+        <h2>Anmeldung</h2>
+        <p class="subtitle">Wähle dein Profil und melde dich mit PIN an.</p>
+        <label>
+          Profil
+          <select id="loginProfileSelect"></select>
+        </label>
+
+        <div id="loginPinBlock">
+          <label>
+            PIN (4-6 Ziffern)
+            <input
+              id="loginPinInput"
+              type="password"
+              inputmode="numeric"
+              autocomplete="off"
+              maxlength="6"
+              placeholder="PIN eingeben"
+            />
+          </label>
+          <div class="action-row">
+            <button id="loginBtn" class="primary-btn icon-btn" type="button" title="Als Schüler anmelden">
+              <span class="btn-icon" aria-hidden="true">👤</span>
+              <span>Anmelden</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="pinSetupBlock" class="hidden">
+          <p class="admin-meta">Erstlogin: Bitte eine persönliche PIN festlegen.</p>
+          <label>
+            Neue PIN (4-6 Ziffern)
+            <input
+              id="setupPinInput"
+              type="password"
+              inputmode="numeric"
+              autocomplete="off"
+              maxlength="6"
+              placeholder="Neue PIN"
+            />
+          </label>
+          <label>
+            PIN bestätigen
+            <input
+              id="setupPinConfirmInput"
+              type="password"
+              inputmode="numeric"
+              autocomplete="off"
+              maxlength="6"
+              placeholder="PIN wiederholen"
+            />
+          </label>
+          <div class="action-row">
+            <button id="setupPinBtn" class="primary-btn icon-btn" type="button" title="PIN festlegen">
+              <span class="btn-icon" aria-hidden="true">✅</span>
+              <span>PIN festlegen</span>
+            </button>
+            <button id="setupCancelBtn" class="ghost-btn icon-btn" type="button" title="Zurück zum Login">
+              <span class="btn-icon" aria-hidden="true">↩</span>
+              <span>Abbrechen</span>
+            </button>
+          </div>
+        </div>
+        <details class="advanced-options">
+          <summary>Admin-Anmeldung</summary>
+          <div class="mt-10">
+            <label>
+              Admin-Code oder Backup-PIN
+              <input
+                id="adminLoginCodeInput"
+                type="password"
+                autocapitalize="none"
+                autocomplete="off"
+                placeholder="Code eingeben"
+              />
+            </label>
+          </div>
+          <div class="action-row mt-10">
+            <button id="adminLoginBtn" class="secondary-btn icon-btn" type="button" title="Als Admin anmelden">
+              <span class="btn-icon" aria-hidden="true">🔐</span>
+              <span>Admin Login</span>
+            </button>
+          </div>
+        </details>
+        <p id="authFeedback" class="feedback"></p>
+      </section>
+
       <header class="app-top panel">
         <div>
           <p class="badge">Klasse 6 · Englisch</p>
           <h1>VokTest</h1>
           <p class="subtitle">Geführtes Training mit Lernen, Quiz und Test.</p>
         </div>
-        <button id="installBtn" class="ghost-btn hidden" type="button">Installieren</button>
+        <div class="header-actions">
+          <span id="currentUserBadge" class="level-chip hidden">-</span>
+          <button id="logoutBtn" class="ghost-btn hidden" type="button">Abmelden</button>
+          <button id="installBtn" class="ghost-btn hidden" type="button">Installieren</button>
+        </div>
       </header>
 
       <main class="app-main">
@@ -254,68 +345,86 @@
         <section class="view hidden" data-section-panel="admin">
           <section class="panel admin-panel">
             <h2>Admin · Eltern/Lehrer</h2>
+            <p class="subtitle">
+              Profile verwalten, Wochenziele setzen und gemeinsamen Vokabelbestand steuern.
+            </p>
 
-            <div id="adminLoginCard" class="admin-card">
-              <h3>Zugang</h3>
-              <label>
-                Passwort oder Backup-PIN
-                <input
-                  id="adminPasswordInput"
-                  type="password"
-                  placeholder="Code eingeben"
-                  autocapitalize="none"
-                  autocomplete="off"
-                />
-              </label>
-              <div class="action-row">
-                <button id="adminUnlockBtn" class="primary-btn icon-btn" type="button" title="Admin entsperren">
-                  <span class="btn-icon" aria-hidden="true">🔓</span>
-                  <span>Entsperren</span>
-                </button>
-              </div>
-              <p id="adminAuthFeedback" class="feedback"></p>
+            <div class="admin-card">
+              <h3>Profile</h3>
+              <ul id="adminProfilesList" class="recent-list"></ul>
             </div>
 
-            <div id="adminDashboardCard" class="admin-card hidden">
-              <div class="admin-head">
-                <h3>Wochenziel-Kontrolle</h3>
-                <button id="adminLockBtn" class="ghost-btn icon-btn" type="button" title="Admin sperren">
-                  <span class="btn-icon" aria-hidden="true">🔒</span>
-                  <span>Sperren</span>
-                </button>
-              </div>
-
-              <p id="adminWeekLabel" class="admin-meta">Woche: -</p>
-              <p id="adminDeadlineLabel" class="admin-meta">Deadline: -</p>
-
-              <div class="admin-progress">
-                <div class="admin-progress-track"><span id="adminProgressFill"></span></div>
-                <p id="adminProgressText" class="admin-progress-text">0 / 120 Min</p>
-                <p id="adminRemainingText" class="admin-progress-sub">Noch 120 Min</p>
-              </div>
-
-              <div class="summary-grid">
-                <article class="stat-box">
-                  <p class="k">Belohnung</p>
-                  <p id="adminRewardText" class="v">-</p>
-                </article>
-                <article class="stat-box">
-                  <p class="k">Status</p>
-                  <p id="adminRewardStatus" class="v">offen</p>
-                </article>
-              </div>
-
+            <div class="admin-card">
+              <h3>Neues Profil</h3>
               <label>
-                Ziel pro Woche (Minuten)
-                <input id="weeklyTargetInput" type="number" min="10" max="1200" step="5" />
+                Name
+                <input id="newProfileNameInput" type="text" maxlength="40" placeholder="z. B. Oliver" />
               </label>
               <div class="action-row">
-                <button id="saveWeeklyTargetBtn" class="secondary-btn icon-btn" type="button" title="Ziel speichern">
-                  <span class="btn-icon" aria-hidden="true">💾</span>
-                  <span>Ziel speichern</span>
+                <button id="createProfileBtn" class="secondary-btn icon-btn" type="button" title="Profil anlegen">
+                  <span class="btn-icon" aria-hidden="true">➕</span>
+                  <span>Profil anlegen</span>
                 </button>
               </div>
+            </div>
 
+            <div class="admin-card">
+              <h3>Profil bearbeiten</h3>
+              <label>
+                Profil
+                <select id="editProfileSelect"></select>
+              </label>
+              <label>
+                Name
+                <input id="editProfileNameInput" type="text" maxlength="40" />
+              </label>
+              <label>
+                Neue PIN (optional)
+                <input
+                  id="editProfilePinInput"
+                  type="password"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  maxlength="6"
+                  placeholder="leer lassen = unverändert"
+                />
+              </label>
+              <label class="checkbox-row">
+                <input id="editProfileActiveInput" type="checkbox" />
+                Profil ist aktiv
+              </label>
+              <label>
+                Wochenziel (Minuten)
+                <input id="editProfileGoalInput" type="number" min="10" max="1200" step="5" />
+              </label>
+              <div class="action-row">
+                <button id="saveProfileBtn" class="secondary-btn icon-btn" type="button" title="Profil speichern">
+                  <span class="btn-icon" aria-hidden="true">💾</span>
+                  <span>Profil speichern</span>
+                </button>
+                <button
+                  id="saveProfileGoalBtn"
+                  class="ghost-btn icon-btn"
+                  type="button"
+                  title="Wochenziel speichern"
+                >
+                  <span class="btn-icon" aria-hidden="true">🎯</span>
+                  <span>Ziel speichern</span>
+                </button>
+                <button
+                  id="resetProfilePinBtn"
+                  class="danger-btn icon-btn"
+                  type="button"
+                  title="PIN zurücksetzen"
+                >
+                  <span class="btn-icon" aria-hidden="true">♻</span>
+                  <span>PIN zurücksetzen</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-card">
+              <h3>Admin-Einstellungen</h3>
               <label>
                 Backup-PIN (mind. 4 Zeichen)
                 <input id="adminBackupPinInput" type="password" minlength="4" autocomplete="off" />
@@ -323,12 +432,13 @@
               <div class="action-row">
                 <button id="saveBackupPinBtn" class="secondary-btn icon-btn" type="button" title="PIN speichern">
                   <span class="btn-icon" aria-hidden="true">🔑</span>
-                  <span>PIN speichern</span>
+                  <span>Backup-PIN speichern</span>
                 </button>
               </div>
-
-              <p id="adminSettingsFeedback" class="feedback"></p>
+              <p class="admin-meta">Hinweis: Standardprofil startet mit PIN 0000 und sollte geändert werden.</p>
             </div>
+
+            <p id="adminSettingsFeedback" class="feedback"></p>
           </section>
         </section>
       </main>

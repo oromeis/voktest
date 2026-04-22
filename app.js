@@ -3,12 +3,9 @@ import {
   DEFAULT_TARGET_MINUTES,
   computeRewardBonusPoints,
   createWeeklyGoal,
-  formatDeadlineText,
   getRewardLabel,
   getWeekContext,
   isDateWithinRange,
-  isDynamicPasswordValid,
-  normalizeSecret,
   sanitizeTargetMinutes,
   secondsToMinutes
 } from "./modules/admin-utils.js";
@@ -59,32 +56,56 @@ const LEVEL_TITLES = [
 ];
 
 const DEFAULT_ADMIN_CONFIG = {
-  backupPin: ""
+  backupPinSet: false
 };
 
 const remoteSync = {
   available: false,
   attempted: false,
   pendingPush: false,
+  pendingSharedPush: false,
   pushInFlight: false,
   connectInFlight: false,
   timerId: null,
-  status: "Nur lokal gespeichert."
+  status: "Nicht angemeldet."
 };
 
 const state = {
-  customVocabulary: load(STORAGE_KEYS.customVocabulary, []),
-  history: load(STORAGE_KEYS.history, []),
-  mistakes: load(STORAGE_KEYS.mistakes, {}),
-  settings: { ...DEFAULT_SETTINGS, ...load(STORAGE_KEYS.settings, {}) },
-  adminConfig: { ...DEFAULT_ADMIN_CONFIG, ...load(STORAGE_KEYS.admin, {}) },
-  weeklyGoal: load(STORAGE_KEYS.weeklyGoal, null),
-  adminSessionUnlocked: false,
+  customVocabulary: [],
+  history: [],
+  mistakes: {},
+  settings: { ...DEFAULT_SETTINGS },
+  adminConfig: { ...DEFAULT_ADMIN_CONFIG },
+  weeklyGoal: null,
   session: null,
-  deferredInstallPrompt: null
+  deferredInstallPrompt: null,
+  auth: {
+    token: "",
+    role: "",
+    user: null,
+    profiles: [],
+    adminProfiles: [],
+    selectedProfileId: "",
+    pinSetupProfileId: ""
+  }
 };
 
 const el = {
+  authGate: document.getElementById("authGate"),
+  loginProfileSelect: document.getElementById("loginProfileSelect"),
+  loginPinBlock: document.getElementById("loginPinBlock"),
+  loginPinInput: document.getElementById("loginPinInput"),
+  loginBtn: document.getElementById("loginBtn"),
+  pinSetupBlock: document.getElementById("pinSetupBlock"),
+  setupPinInput: document.getElementById("setupPinInput"),
+  setupPinConfirmInput: document.getElementById("setupPinConfirmInput"),
+  setupPinBtn: document.getElementById("setupPinBtn"),
+  setupCancelBtn: document.getElementById("setupCancelBtn"),
+  adminLoginCodeInput: document.getElementById("adminLoginCodeInput"),
+  adminLoginBtn: document.getElementById("adminLoginBtn"),
+  authFeedback: document.getElementById("authFeedback"),
+  currentUserBadge: document.getElementById("currentUserBadge"),
+  logoutBtn: document.getElementById("logoutBtn"),
   sectionTabs: Array.from(document.querySelectorAll("[data-section-target]")),
   sectionPanels: Array.from(document.querySelectorAll("[data-section-panel]")),
   modeButtons: Array.from(document.querySelectorAll("[data-mode]")),
@@ -140,21 +161,17 @@ const el = {
   appVersion: document.getElementById("appVersion"),
   installBtn: document.getElementById("installBtn"),
   weeklyGoalHint: document.getElementById("weeklyGoalHint"),
-  adminLoginCard: document.getElementById("adminLoginCard"),
-  adminDashboardCard: document.getElementById("adminDashboardCard"),
-  adminPasswordInput: document.getElementById("adminPasswordInput"),
-  adminUnlockBtn: document.getElementById("adminUnlockBtn"),
-  adminAuthFeedback: document.getElementById("adminAuthFeedback"),
-  adminLockBtn: document.getElementById("adminLockBtn"),
-  adminWeekLabel: document.getElementById("adminWeekLabel"),
-  adminDeadlineLabel: document.getElementById("adminDeadlineLabel"),
-  adminProgressFill: document.getElementById("adminProgressFill"),
-  adminProgressText: document.getElementById("adminProgressText"),
-  adminRemainingText: document.getElementById("adminRemainingText"),
-  adminRewardText: document.getElementById("adminRewardText"),
-  adminRewardStatus: document.getElementById("adminRewardStatus"),
-  weeklyTargetInput: document.getElementById("weeklyTargetInput"),
-  saveWeeklyTargetBtn: document.getElementById("saveWeeklyTargetBtn"),
+  adminProfilesList: document.getElementById("adminProfilesList"),
+  newProfileNameInput: document.getElementById("newProfileNameInput"),
+  createProfileBtn: document.getElementById("createProfileBtn"),
+  editProfileSelect: document.getElementById("editProfileSelect"),
+  editProfileNameInput: document.getElementById("editProfileNameInput"),
+  editProfilePinInput: document.getElementById("editProfilePinInput"),
+  editProfileActiveInput: document.getElementById("editProfileActiveInput"),
+  editProfileGoalInput: document.getElementById("editProfileGoalInput"),
+  saveProfileBtn: document.getElementById("saveProfileBtn"),
+  saveProfileGoalBtn: document.getElementById("saveProfileGoalBtn"),
+  resetProfilePinBtn: document.getElementById("resetProfilePinBtn"),
   adminBackupPinInput: document.getElementById("adminBackupPinInput"),
   saveBackupPinBtn: document.getElementById("saveBackupPinBtn"),
   adminSettingsFeedback: document.getElementById("adminSettingsFeedback")
@@ -194,35 +211,68 @@ const importModule = createImportModule({
 
 let feedbackTimeoutId = null;
 let sessionTickIntervalId = null;
+let reconnectIntervalId = null;
 
 void init();
 
 async function init() {
-  normalizeHistoryEntries();
   bindEvents();
   bindSectionNavigation();
   bindSessionVisibilityTracking();
   importModule.bind();
+  resetStateForLoggedOut();
   applySettingsToControls();
-  refreshUnitFilters();
-  historyModule.renderHistory();
-  updateGamificationWidgets(0);
-  renderAdminState();
-  renderWeeklyGoalHint();
-  renderIdleState();
   renderStorageStatus();
   void hydrateVersionInfo();
   registerServiceWorker();
-
-  await hydrateFromServer();
-  ensureCurrentWeeklyGoal();
-  renderAdminState();
-  renderWeeklyGoalHint();
-  renderIdleState();
-  startRemoteReconnectLoop();
+  await loadLoginProfiles();
+  showLoggedOutState();
 }
 
 function bindEvents() {
+  el.loginBtn.addEventListener("click", () => {
+    void handleStudentLogin();
+  });
+  el.setupPinBtn.addEventListener("click", () => {
+    void handleInitialPinSetup();
+  });
+  el.setupCancelBtn.addEventListener("click", () => {
+    cancelInitialPinSetup();
+  });
+  el.adminLoginBtn.addEventListener("click", () => {
+    void handleAdminLogin();
+  });
+  el.logoutBtn.addEventListener("click", () => {
+    void handleLogout();
+  });
+  el.loginPinInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleStudentLogin();
+    }
+  });
+  el.setupPinInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleInitialPinSetup();
+    }
+  });
+  el.setupPinConfirmInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleInitialPinSetup();
+    }
+  });
+  el.loginProfileSelect.addEventListener("change", () => {
+    syncLoginFlowForSelectedProfile();
+  });
+  el.adminLoginCodeInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleAdminLogin();
+    }
+  });
+
   el.modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       state.settings.mode = button.dataset.mode;
@@ -328,17 +378,20 @@ function bindEvents() {
     el.installBtn.classList.add("hidden");
   });
 
-  el.adminUnlockBtn.addEventListener("click", handleAdminUnlock);
-  el.adminLockBtn.addEventListener("click", lockAdminSession);
-  el.saveWeeklyTargetBtn.addEventListener("click", handleSaveWeeklyTarget);
-  el.saveBackupPinBtn.addEventListener("click", handleSaveBackupPin);
-
-  el.adminPasswordInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      handleAdminUnlock();
-    }
+  el.createProfileBtn.addEventListener("click", () => {
+    void handleCreateProfile();
   });
+  el.editProfileSelect.addEventListener("change", syncEditProfileFields);
+  el.saveProfileBtn.addEventListener("click", () => {
+    void handleSaveProfile();
+  });
+  el.saveProfileGoalBtn.addEventListener("click", () => {
+    void handleSaveProfileGoal();
+  });
+  el.resetProfilePinBtn.addEventListener("click", () => {
+    void handleResetProfilePin();
+  });
+  el.saveBackupPinBtn.addEventListener("click", handleSaveBackupPin);
 }
 
 function bindSectionNavigation() {
@@ -354,7 +407,6 @@ function applySettingsToControls() {
   el.focusSelect.value = state.settings.focus;
   syncModeButtons();
   syncDirectionButtons();
-  setActiveSection("start");
 }
 
 function setActiveSection(sectionName) {
@@ -364,8 +416,9 @@ function setActiveSection(sectionName) {
     import: "settings"
   };
   const normalizedSection = legacyMap[sectionName] || sectionName;
-  const allowed = ["start", "play", "history", "settings", "admin"];
-  const activeSection = allowed.includes(normalizedSection) ? normalizedSection : "start";
+  const activeSection = getAllowedSections().includes(normalizedSection)
+    ? normalizedSection
+    : getDefaultSectionForRole();
 
   state.settings.section = activeSection;
   save(STORAGE_KEYS.settings, state.settings);
@@ -479,6 +532,10 @@ function getPool(focusMode) {
 }
 
 function startSession(focusMode = "all") {
+  if (state.auth.role !== "student") {
+    setFeedback("Lernrunden sind nur im Schülermodus verfügbar.", false);
+    return;
+  }
   ensureCurrentWeeklyGoal();
   const pool = getPool(focusMode);
   if (pool.length === 0) {
@@ -699,6 +756,10 @@ function setSettingsFeedback(text, ok) {
 }
 
 function handleResetProgress() {
+  if (state.auth.role !== "student") {
+    setSettingsFeedback("Nur im Schülermodus verfügbar.", false);
+    return;
+  }
   const accepted = window.confirm(
     "Wirklich zurücksetzen? Verlauf, Fehlerstatistik, XP und Level werden gelöscht."
   );
@@ -1068,98 +1129,207 @@ function renderWeeklyGoalHint() {
 }
 
 function renderAdminState() {
-  ensureCurrentWeeklyGoal();
-  const weeklyGoal = state.weeklyGoal;
-  if (!weeklyGoal) {
+  if (state.auth.role !== "admin") {
     return;
   }
 
-  const unlocked = state.adminSessionUnlocked;
-  el.adminLoginCard.classList.toggle("hidden", unlocked);
-  el.adminDashboardCard.classList.toggle("hidden", !unlocked);
-
-  if (!unlocked) {
-    return;
+  const profiles = Array.isArray(state.auth.adminProfiles) ? state.auth.adminProfiles : [];
+  el.adminProfilesList.innerHTML = "";
+  if (profiles.length === 0) {
+    const item = document.createElement("li");
+    item.className = "recent-item";
+    item.textContent = "Noch keine Profile angelegt.";
+    el.adminProfilesList.append(item);
+  } else {
+    profiles.forEach((profile) => {
+      const item = document.createElement("li");
+      item.className = "recent-item";
+      const weekUsed = Number(profile?.kpi?.weekUsedMinutes) || 0;
+      const weekTarget = Number(profile?.kpi?.weekTargetMinutes) || 0;
+      const pinStatus = profile.pinSet === false ? "PIN offen" : "PIN gesetzt";
+      item.innerHTML = `
+        <p class="recent-head">${profile.name} ${profile.active ? "" : "· (deaktiviert)"}</p>
+        <p>Runden: ${Number(profile?.kpi?.rounds) || 0} · XP gesamt: ${Number(profile?.kpi?.totalXp) || 0} · ${pinStatus}</p>
+        <p class="recent-sub">Woche: ${weekUsed}/${weekTarget} Min</p>
+      `;
+      el.adminProfilesList.append(item);
+    });
   }
 
-  const usedSeconds = getWeeklyUsedSeconds(weeklyGoal, true);
-  const usedMinutes = Math.floor(secondsToMinutes(usedSeconds));
-  const target = weeklyGoal.targetMinutes;
-  const progress = target > 0 ? Math.min(100, Math.round((usedMinutes / target) * 100)) : 0;
+  el.editProfileSelect.innerHTML = "";
+  profiles.forEach((profile) => {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.name;
+    el.editProfileSelect.append(option);
+  });
 
-  el.adminWeekLabel.textContent = `Woche: ${weeklyGoal.weekKey}`;
-  el.adminDeadlineLabel.textContent = `Deadline: ${formatDeadlineText(weeklyGoal.weekEndIso)}`;
-  el.adminProgressFill.style.width = `${progress}%`;
-  el.adminProgressText.textContent = `${usedMinutes} / ${target} Min`;
-  el.adminRemainingText.textContent =
-    usedMinutes >= target ? "Ziel erfüllt." : `Noch ${Math.max(0, target - usedMinutes)} Min offen.`;
-
-  el.adminRewardText.textContent = getRewardLabel(weeklyGoal.rewardDefinition);
-
-  let rewardStatus = "offen";
-  if (weeklyGoal.rewardGranted) {
-    rewardStatus = `Belohnung erhalten (+${Math.max(0, weeklyGoal.rewardBonusPoints || 0)} XP)`;
-  } else if (usedMinutes >= target) {
-    rewardStatus = "Ziel erreicht · Bonus mit nächster Runde";
+  if (profiles.length > 0) {
+    if (!profiles.some((profile) => profile.id === state.auth.selectedProfileId)) {
+      state.auth.selectedProfileId = profiles[0].id;
+    }
+  } else {
+    state.auth.selectedProfileId = "";
   }
-  el.adminRewardStatus.textContent = rewardStatus;
 
-  el.weeklyTargetInput.value = String(target);
+  syncEditProfileFields();
   el.adminBackupPinInput.value = "";
-  el.adminBackupPinInput.placeholder = state.adminConfig.backupPin ? "Bereits gesetzt" : "Neue PIN";
+  el.adminBackupPinInput.placeholder = state.adminConfig.backupPinSet ? "Bereits gesetzt" : "Neue PIN";
 }
 
-function handleAdminUnlock() {
-  const input = el.adminPasswordInput.value.trim();
-  if (!input) {
-    setAdminAuthFeedback("Bitte Passwort oder Backup-PIN eingeben.", false);
+function syncEditProfileFields() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+  const selectedId = el.editProfileSelect.value || state.auth.selectedProfileId || "";
+  state.auth.selectedProfileId = selectedId;
+  const profile = state.auth.adminProfiles.find((item) => item.id === selectedId);
+  if (!profile) {
+    el.editProfileNameInput.value = "";
+    el.editProfilePinInput.value = "";
+    el.editProfileGoalInput.value = String(DEFAULT_TARGET_MINUTES);
+    el.editProfileActiveInput.checked = true;
     return;
   }
 
-  const dynamicAccepted = isDynamicPasswordValid(input, new Date());
-  const backupAccepted =
-    normalizeSecret(state.adminConfig.backupPin) &&
-    normalizeSecret(input) === normalizeSecret(state.adminConfig.backupPin);
+  const targetMinutes = Number(profile?.kpi?.weekTargetMinutes) || DEFAULT_TARGET_MINUTES;
+  el.editProfileNameInput.value = profile.name || "";
+  el.editProfilePinInput.value = "";
+  el.editProfileGoalInput.value = String(targetMinutes);
+  el.editProfileActiveInput.checked = profile.active !== false;
+}
 
-  if (!dynamicAccepted && !backupAccepted) {
-    setAdminAuthFeedback("Zugangscode ist ungültig.", false);
+async function handleCreateProfile() {
+  if (state.auth.role !== "admin") {
     return;
   }
 
-  state.adminSessionUnlocked = true;
-  el.adminPasswordInput.value = "";
-  setAdminAuthFeedback("Admin-Bereich entsperrt.", true);
-  renderAdminState();
-}
-
-function lockAdminSession() {
-  state.adminSessionUnlocked = false;
-  setAdminSettingsFeedback("", true);
-  renderAdminState();
-}
-
-function handleSaveWeeklyTarget() {
-  if (!state.adminSessionUnlocked || !state.weeklyGoal) {
+  const name = el.newProfileNameInput.value.trim();
+  if (!name) {
+    setAdminSettingsFeedback("Bitte Namen für das Profil eingeben.", false);
     return;
   }
 
-  const target = sanitizeTargetMinutes(el.weeklyTargetInput.value, state.weeklyGoal.targetMinutes);
-  state.weeklyGoal.targetMinutes = target;
-
-  const usedMinutes = secondsToMinutes(getWeeklyUsedSeconds(state.weeklyGoal, true));
-  if (!state.weeklyGoal.rewardGranted) {
-    state.weeklyGoal.achieved = usedMinutes >= target;
+  const response = await apiRequest("/api/admin/profiles", {
+    method: "POST",
+    body: {
+      name
+    }
+  });
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "Profil konnte nicht angelegt werden.", false);
+    return;
   }
 
-  touchWeeklyGoal(state.weeklyGoal);
-  save(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
-  renderAdminState();
-  renderWeeklyGoalHint();
-  setAdminSettingsFeedback(`Wochenziel gespeichert: ${target} Minuten.`, true);
+  el.newProfileNameInput.value = "";
+  await refreshAdminProfiles();
+  setAdminSettingsFeedback("Profil angelegt. PIN wird beim ersten Login gesetzt.", true);
 }
 
-function handleSaveBackupPin() {
-  if (!state.adminSessionUnlocked) {
+async function handleSaveProfile() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+
+  const profileId = state.auth.selectedProfileId;
+  if (!profileId) {
+    setAdminSettingsFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+
+  const payload = {
+    name: el.editProfileNameInput.value.trim(),
+    active: !!el.editProfileActiveInput.checked
+  };
+  if (!payload.name) {
+    setAdminSettingsFeedback("Profilname darf nicht leer sein.", false);
+    return;
+  }
+
+  const pin = el.editProfilePinInput.value.trim();
+  if (pin) {
+    if (!/^\d{4,6}$/.test(pin)) {
+      setAdminSettingsFeedback("Neue PIN muss aus 4-6 Ziffern bestehen.", false);
+      return;
+    }
+    payload.pin = pin;
+  }
+
+  const response = await apiRequest(`/api/admin/profiles/${encodeURIComponent(profileId)}`, {
+    method: "PUT",
+    body: payload
+  });
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "Profil konnte nicht gespeichert werden.", false);
+    return;
+  }
+
+  el.editProfilePinInput.value = "";
+  await refreshAdminProfiles();
+  setAdminSettingsFeedback("Profil gespeichert.", true);
+}
+
+async function handleSaveProfileGoal() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+
+  const profileId = state.auth.selectedProfileId;
+  if (!profileId) {
+    setAdminSettingsFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+
+  const targetMinutes = sanitizeTargetMinutes(el.editProfileGoalInput.value, DEFAULT_TARGET_MINUTES);
+  const response = await apiRequest(`/api/admin/profiles/${encodeURIComponent(profileId)}/goal`, {
+    method: "PUT",
+    body: {
+      targetMinutes
+    }
+  });
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "Wochenziel konnte nicht gespeichert werden.", false);
+    return;
+  }
+
+  await refreshAdminProfiles();
+  setAdminSettingsFeedback(`Wochenziel gespeichert: ${targetMinutes} Minuten.`, true);
+}
+
+async function handleResetProfilePin() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+
+  const profileId = state.auth.selectedProfileId;
+  if (!profileId) {
+    setAdminSettingsFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+
+  const profile = state.auth.adminProfiles.find((item) => item.id === profileId);
+  const profileName = profile?.name || "dieses Profil";
+  const confirmed = window.confirm(
+    `PIN für ${profileName} zurücksetzen? Beim nächsten Login muss eine neue PIN festgelegt werden.`
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const response = await apiRequest(`/api/admin/profiles/${encodeURIComponent(profileId)}/reset-pin`, {
+    method: "POST"
+  });
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "PIN konnte nicht zurückgesetzt werden.", false);
+    return;
+  }
+
+  await refreshAdminProfiles();
+  setAdminSettingsFeedback(`PIN für ${profileName} wurde zurückgesetzt.`, true);
+}
+
+async function handleSaveBackupPin() {
+  if (state.auth.role !== "admin") {
     return;
   }
 
@@ -1169,16 +1339,20 @@ function handleSaveBackupPin() {
     return;
   }
 
-  state.adminConfig.backupPin = value;
-  save(STORAGE_KEYS.admin, state.adminConfig);
-  el.adminBackupPinInput.value = "";
-  renderAdminState();
-  setAdminSettingsFeedback("Backup-PIN gespeichert.", true);
-}
+  const response = await apiRequest("/api/admin/settings", {
+    method: "PUT",
+    body: {
+      backupPin: value
+    }
+  });
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "Backup-PIN konnte nicht gespeichert werden.", false);
+    return;
+  }
 
-function setAdminAuthFeedback(text, ok) {
-  el.adminAuthFeedback.textContent = text;
-  el.adminAuthFeedback.className = `feedback ${ok ? "ok" : "err"}`;
+  state.adminConfig.backupPinSet = true;
+  el.adminBackupPinInput.value = "";
+  setAdminSettingsFeedback("Backup-PIN gespeichert.", true);
 }
 
 function setAdminSettingsFeedback(text, ok) {
@@ -1186,132 +1360,447 @@ function setAdminSettingsFeedback(text, ok) {
   el.adminSettingsFeedback.className = `feedback ${ok ? "ok" : "err"}`;
 }
 
-function load(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) {
-      return fallback;
-    }
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-
 function save(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-  if (!remoteSync.attempted) {
+  if (state.auth.role === "student") {
+    scheduleServerPush();
     return;
   }
-  scheduleServerPush();
+  if (state.auth.role === "admin" && key === STORAGE_KEYS.customVocabulary) {
+    remoteSync.pendingSharedPush = true;
+    scheduleServerPush();
+  }
 }
 
-function saveLocalOnly(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
+function resetStateForLoggedOut() {
+  state.customVocabulary = [];
+  state.history = [];
+  state.mistakes = {};
+  state.settings = { ...DEFAULT_SETTINGS };
+  state.adminConfig = { ...DEFAULT_ADMIN_CONFIG };
+  state.weeklyGoal = null;
+  state.session = null;
+  state.auth.token = "";
+  state.auth.role = "";
+  state.auth.user = null;
+  state.auth.adminProfiles = [];
+  state.auth.selectedProfileId = "";
+  state.auth.pinSetupProfileId = "";
 }
 
-async function hydrateFromServer() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+function showLoggedOutState() {
+  resetStateForLoggedOut();
+  applyRoleView();
+  applySettingsToControls();
+  refreshUnitFilters();
+  syncLoginFlowForSelectedProfile();
+  setActiveSection("start");
+  historyModule.renderHistory();
+  renderIdleState();
+  renderAdminState();
+  renderStorageStatus();
+  setAuthFeedback("Bitte anmelden.", true);
+}
 
+async function loadLoginProfiles() {
   try {
-    const response = await fetch("/api/state", {
+    const response = await fetch("/api/auth/profiles", {
       method: "GET",
-      headers: {
-        Accept: "application/json"
-      },
-      signal: controller.signal
+      headers: { Accept: "application/json" }
     });
-
     if (!response.ok) {
-      setRemoteStatus(false, "Nur lokal gespeichert (kein API-Server).");
+      state.auth.profiles = [];
+      renderLoginProfiles();
+      setRemoteStatus(false, "Server nicht erreichbar.");
       return;
     }
 
     const payload = await response.json();
-    const serverState = payload?.state;
-    if (!serverState || typeof serverState !== "object") {
-      setRemoteStatus(false, "Nur lokal gespeichert (ungültige Serverantwort).");
-      return;
-    }
-
+    state.auth.profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
+    renderLoginProfiles();
     remoteSync.available = true;
     remoteSync.attempted = true;
-    remoteSync.status = "Serverspeicher aktiv.";
+    remoteSync.status = "Server erreichbar. Login erforderlich.";
     renderStorageStatus();
-
-    const localSnapshot = buildServerStatePayload();
-    if (isStatePayloadEmpty(serverState) && !isStatePayloadEmpty(localSnapshot)) {
-      remoteSync.pendingPush = true;
-      await pushStateToServer();
-      return;
-    }
-
-    applyServerState(serverState);
   } catch {
-    setRemoteStatus(false, "Nur lokal gespeichert (Server nicht erreichbar).");
-  } finally {
-    clearTimeout(timeout);
+    state.auth.profiles = [];
+    renderLoginProfiles();
+    setRemoteStatus(false, "Server nicht erreichbar.");
   }
 }
 
-function applyServerState(serverState) {
-  const has = (key) => Object.prototype.hasOwnProperty.call(serverState, key);
-  let shouldPushLocalWeeklyGoal = false;
+function renderLoginProfiles() {
+  el.loginProfileSelect.innerHTML = "";
+  if (state.auth.profiles.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Keine Profile verfügbar";
+    el.loginProfileSelect.append(option);
+    syncLoginFlowForSelectedProfile();
+    return;
+  }
+  state.auth.profiles.forEach((profile) => {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.pinSet === false ? `${profile.name} · PIN festlegen` : profile.name;
+    el.loginProfileSelect.append(option);
+  });
+  syncLoginFlowForSelectedProfile();
+}
 
+function getSelectedLoginProfile() {
+  const profileId = el.loginProfileSelect.value;
+  if (!profileId) {
+    return null;
+  }
+  return state.auth.profiles.find((profile) => profile.id === profileId) || null;
+}
+
+function syncLoginFlowForSelectedProfile() {
+  const profile = getSelectedLoginProfile();
+  const requiresSetup = Boolean(profile && profile.pinSet === false);
+  state.auth.pinSetupProfileId = requiresSetup ? profile.id : "";
+
+  el.loginPinBlock.classList.toggle("hidden", requiresSetup);
+  el.pinSetupBlock.classList.toggle("hidden", !requiresSetup);
+
+  if (requiresSetup) {
+    el.loginPinInput.value = "";
+    el.setupPinInput.focus();
+    return;
+  }
+  el.setupPinInput.value = "";
+  el.setupPinConfirmInput.value = "";
+}
+
+function cancelInitialPinSetup() {
+  el.setupPinInput.value = "";
+  el.setupPinConfirmInput.value = "";
+  const profile = getSelectedLoginProfile();
+  if (profile && profile.pinSet === false) {
+    setAuthFeedback("Für dieses Profil muss zuerst eine PIN festgelegt werden.", false);
+    return;
+  }
+  state.auth.pinSetupProfileId = "";
+  syncLoginFlowForSelectedProfile();
+  setAuthFeedback("PIN-Einrichtung abgebrochen.", true);
+}
+
+async function handleStudentLogin() {
+  const profile = getSelectedLoginProfile();
+  const profileId = profile?.id || "";
+  const pin = el.loginPinInput.value.trim();
+  if (!profileId) {
+    setAuthFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+  if (profile && profile.pinSet === false) {
+    state.auth.pinSetupProfileId = profile.id;
+    syncLoginFlowForSelectedProfile();
+    setAuthFeedback("Für dieses Profil bitte zuerst eine PIN festlegen.", false);
+    return;
+  }
+  if (!/^\d{4,6}$/.test(pin)) {
+    setAuthFeedback("PIN muss aus 4-6 Ziffern bestehen.", false);
+    return;
+  }
+
+  const result = await apiRequest("/api/auth/login", {
+    method: "POST",
+    body: { profileId, pin }
+  }, false);
+  if (!result.ok) {
+    if (result.error === "pin_setup_required") {
+      state.auth.pinSetupProfileId = profileId;
+      syncLoginFlowForSelectedProfile();
+      setAuthFeedback("Für dieses Profil bitte zuerst eine PIN festlegen.", false);
+      return;
+    }
+    setAuthFeedback(getAuthErrorMessage(result.error, "Anmeldung fehlgeschlagen."), false);
+    return;
+  }
+
+  state.auth.token = result.token;
+  state.auth.role = "student";
+  state.auth.user = result.user || null;
+  el.loginPinInput.value = "";
+  await loadStateForRole();
+  if (result.warning) {
+    setAuthFeedback(result.warning, true);
+  } else {
+    setAuthFeedback("", true);
+  }
+}
+
+async function handleInitialPinSetup() {
+  const profile = getSelectedLoginProfile();
+  const profileId = profile?.id || "";
+  if (!profileId) {
+    setAuthFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+
+  const pin = el.setupPinInput.value.trim();
+  const pinConfirm = el.setupPinConfirmInput.value.trim();
+  if (!/^\d{4,6}$/.test(pin)) {
+    setAuthFeedback("Neue PIN muss aus 4-6 Ziffern bestehen.", false);
+    return;
+  }
+  if (!/^\d{4,6}$/.test(pinConfirm)) {
+    setAuthFeedback("Bitte PIN-Bestätigung mit 4-6 Ziffern eingeben.", false);
+    return;
+  }
+  if (pin !== pinConfirm) {
+    setAuthFeedback("PIN und Bestätigung stimmen nicht überein.", false);
+    return;
+  }
+
+  const result = await apiRequest("/api/auth/initialize-pin", {
+    method: "POST",
+    body: { profileId, pin, pinConfirm }
+  }, false);
+  if (!result.ok) {
+    if (result.error === "pin_already_set") {
+      await loadLoginProfiles();
+      syncLoginFlowForSelectedProfile();
+      setAuthFeedback("PIN wurde bereits gesetzt. Bitte normal anmelden.", false);
+      return;
+    }
+    setAuthFeedback(getAuthErrorMessage(result.error, "PIN konnte nicht gesetzt werden."), false);
+    return;
+  }
+
+  state.auth.token = result.token;
+  state.auth.role = "student";
+  state.auth.user = result.user || null;
+  state.auth.pinSetupProfileId = "";
+  el.setupPinInput.value = "";
+  el.setupPinConfirmInput.value = "";
+  await loadStateForRole();
+  setAuthFeedback("PIN gesetzt und Anmeldung erfolgreich.", true);
+}
+
+async function handleAdminLogin() {
+  const code = el.adminLoginCodeInput.value.trim();
+  if (!code) {
+    setAuthFeedback("Bitte Admin-Code eingeben.", false);
+    return;
+  }
+
+  const result = await apiRequest("/api/auth/admin-login", {
+    method: "POST",
+    body: { code }
+  }, false);
+  if (!result.ok) {
+    setAuthFeedback(getAuthErrorMessage(result.error, "Admin-Login fehlgeschlagen."), false);
+    return;
+  }
+
+  state.auth.token = result.token;
+  state.auth.role = "admin";
+  state.auth.user = { id: "admin", name: "Eltern/Admin" };
+  el.adminLoginCodeInput.value = "";
+  await loadStateForRole();
+  setAuthFeedback("", true);
+}
+
+async function handleLogout() {
+  if (state.auth.token) {
+    await apiRequest("/api/auth/logout", { method: "POST" }, true);
+  }
+  await loadLoginProfiles();
+  showLoggedOutState();
+}
+
+async function loadStateForRole() {
+  if (state.auth.role === "student") {
+    const result = await apiRequest("/api/me/state", { method: "GET" });
+    if (!result.ok) {
+      await forceLogoutWithReason(result.error || "Sitzung ungültig.");
+      return;
+    }
+    applyStudentState(result.state || {});
+    normalizeHistoryEntries();
+    ensureCurrentWeeklyGoal();
+  } else if (state.auth.role === "admin") {
+    state.history = [];
+    state.mistakes = {};
+    state.weeklyGoal = null;
+    const shared = await apiRequest("/api/admin/shared", { method: "GET" });
+    if (!shared.ok) {
+      await forceLogoutWithReason(shared.error || "Admin-Daten konnten nicht geladen werden.");
+      return;
+    }
+    state.customVocabulary = Array.isArray(shared.customVocabulary) ? shared.customVocabulary : [];
+    state.adminConfig = { ...DEFAULT_ADMIN_CONFIG, ...(shared.admin || {}) };
+    await refreshAdminProfiles();
+  }
+
+  remoteSync.available = true;
+  remoteSync.attempted = true;
+  remoteSync.status = "Serverspeicher aktiv.";
+  applyRoleView();
+  applySettingsToControls();
+  refreshUnitFilters();
+  historyModule.renderHistory();
+  renderWeeklyGoalHint();
+  renderIdleState();
+  updateGamificationWidgets(0);
+  renderAdminState();
+  setActiveSection(getDefaultSectionForRole());
+  startRemoteReconnectLoop();
+}
+
+function applyStudentState(serverState) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(serverState, key);
   if (has(STORAGE_KEYS.history)) {
-    state.history = Array.isArray(serverState[STORAGE_KEYS.history])
-      ? serverState[STORAGE_KEYS.history]
-      : [];
-    saveLocalOnly(STORAGE_KEYS.history, state.history);
+    state.history = Array.isArray(serverState[STORAGE_KEYS.history]) ? serverState[STORAGE_KEYS.history] : [];
   }
   if (has(STORAGE_KEYS.mistakes)) {
     const mistakes = serverState[STORAGE_KEYS.mistakes];
     state.mistakes = mistakes && typeof mistakes === "object" ? mistakes : {};
-    saveLocalOnly(STORAGE_KEYS.mistakes, state.mistakes);
   }
   if (has(STORAGE_KEYS.customVocabulary)) {
     state.customVocabulary = Array.isArray(serverState[STORAGE_KEYS.customVocabulary])
       ? serverState[STORAGE_KEYS.customVocabulary]
       : [];
-    saveLocalOnly(STORAGE_KEYS.customVocabulary, state.customVocabulary);
   }
   if (has(STORAGE_KEYS.settings)) {
-    state.settings = {
-      ...DEFAULT_SETTINGS,
-      ...state.settings,
-      ...(serverState[STORAGE_KEYS.settings] || {})
-    };
-    saveLocalOnly(STORAGE_KEYS.settings, state.settings);
-  }
-  if (has(STORAGE_KEYS.admin)) {
-    state.adminConfig = {
-      ...DEFAULT_ADMIN_CONFIG,
-      ...(serverState[STORAGE_KEYS.admin] || {})
-    };
-    saveLocalOnly(STORAGE_KEYS.admin, state.adminConfig);
+    state.settings = { ...DEFAULT_SETTINGS, ...(serverState[STORAGE_KEYS.settings] || {}) };
   }
   if (has(STORAGE_KEYS.weeklyGoal)) {
-    const serverWeeklyGoal = serverState[STORAGE_KEYS.weeklyGoal] || null;
-    const resolvedWeeklyGoal = resolveWeeklyGoalState(state.weeklyGoal, serverWeeklyGoal);
-    state.weeklyGoal = resolvedWeeklyGoal.value;
-    shouldPushLocalWeeklyGoal = resolvedWeeklyGoal.preferLocal;
-    saveLocalOnly(STORAGE_KEYS.weeklyGoal, state.weeklyGoal);
+    state.weeklyGoal = serverState[STORAGE_KEYS.weeklyGoal] || null;
+  }
+}
+
+async function refreshAdminProfiles() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+  const response = await apiRequest("/api/admin/profiles", { method: "GET" });
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "Profile konnten nicht geladen werden.", false);
+    return;
+  }
+  state.auth.adminProfiles = Array.isArray(response.profiles) ? response.profiles : [];
+  if (!state.auth.selectedProfileId && state.auth.adminProfiles[0]) {
+    state.auth.selectedProfileId = state.auth.adminProfiles[0].id;
+  }
+  renderAdminState();
+}
+
+function getAllowedSections() {
+  if (state.auth.role === "student") {
+    return ["start", "play", "history"];
+  }
+  if (state.auth.role === "admin") {
+    return ["settings", "admin"];
+  }
+  return [];
+}
+
+function getDefaultSectionForRole() {
+  if (state.auth.role === "student") {
+    return "start";
+  }
+  if (state.auth.role === "admin") {
+    return "admin";
+  }
+  return "start";
+}
+
+function applyRoleView() {
+  const loggedIn = !!state.auth.token;
+  el.authGate.classList.toggle("hidden", loggedIn);
+  el.currentUserBadge.classList.toggle("hidden", !loggedIn);
+  el.logoutBtn.classList.toggle("hidden", !loggedIn);
+  if (loggedIn && state.auth.user) {
+    const roleLabel = state.auth.role === "admin" ? "Admin" : "Schüler";
+    el.currentUserBadge.textContent = `${roleLabel}: ${state.auth.user.name}`;
+  } else {
+    el.currentUserBadge.textContent = "-";
   }
 
-  normalizeHistoryEntries();
-  ensureCurrentWeeklyGoal();
+  const allowed = getAllowedSections();
+  el.sectionTabs.forEach((button) => {
+    button.classList.toggle("hidden", !allowed.includes(button.dataset.sectionTarget));
+  });
+}
+
+function setAuthFeedback(text, ok) {
+  el.authFeedback.textContent = text;
+  el.authFeedback.className = `feedback ${ok ? "ok" : "err"}`;
+}
+
+function getAuthErrorMessage(code, fallback) {
+  const map = {
+    unauthorized: "Sitzung ungültig. Bitte neu anmelden.",
+    login_failed: "Anmeldung fehlgeschlagen. Bitte Daten prüfen.",
+    invalid_payload: "Eingaben sind unvollständig oder ungültig.",
+    pin_setup_required: "Für dieses Profil muss zuerst eine PIN vergeben werden.",
+    pin_mismatch: "PIN und Bestätigung stimmen nicht überein.",
+    pin_already_set: "PIN wurde bereits gesetzt. Bitte normal anmelden.",
+    profile_not_found: "Profil nicht gefunden oder nicht mehr aktiv.",
+    profile_inactive: "Profil ist deaktiviert."
+  };
+  return map[code] || fallback;
+}
+
+async function forceLogoutWithReason(reason) {
+  resetStateForLoggedOut();
+  applyRoleView();
   applySettingsToControls();
   refreshUnitFilters();
   historyModule.renderHistory();
-  renderAdminState();
-  renderWeeklyGoalHint();
   renderIdleState();
-  updateGamificationWidgets(0);
+  renderAdminState();
+  remoteSync.available = false;
+  remoteSync.status = "Sitzung beendet.";
+  renderStorageStatus();
+  await loadLoginProfiles();
+  setAuthFeedback(reason || "Bitte erneut anmelden.", false);
+}
 
-  if (shouldPushLocalWeeklyGoal) {
-    remoteSync.pendingPush = true;
-    void pushStateToServer();
+async function apiRequest(path, options = {}, requireAuth = true) {
+  const headers = new Headers(options.headers || {});
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+  if (requireAuth) {
+    if (!state.auth.token) {
+      return { ok: false, error: "Nicht angemeldet." };
+    }
+    headers.set("Authorization", `Bearer ${state.auth.token}`);
+  }
+  if (options.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(path, {
+      method: options.method || "GET",
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (!response.ok) {
+      if (response.status === 401 && requireAuth) {
+        await forceLogoutWithReason("Sitzung abgelaufen. Bitte neu anmelden.");
+      }
+      return { ok: false, error: payload?.error || "Anfrage fehlgeschlagen.", status: response.status };
+    }
+    return payload && typeof payload === "object" ? payload : { ok: true };
+  } catch {
+    return { ok: false, error: "Server nicht erreichbar." };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -1326,32 +1815,29 @@ function renderStorageStatus() {
   if (!el.storageStatus) {
     return;
   }
-  const prefix = remoteSync.available ? "Speicher: Server" : "Speicher: Lokal";
-  const text = remoteSync.status || (remoteSync.available ? "Serverspeicher aktiv." : "Nur lokal gespeichert.");
-  el.storageStatus.textContent = `${prefix} · ${text}`;
+  const login = state.auth.role
+    ? `Angemeldet: ${state.auth.role === "admin" ? "Admin" : "Schüler"}`
+    : "Nicht angemeldet";
+  const prefix = remoteSync.available ? "Speicher: Server" : "Speicher: Offline";
+  const text = remoteSync.status || (remoteSync.available ? "Serverspeicher aktiv." : "Server nicht erreichbar.");
+  el.storageStatus.textContent = `${prefix} · ${login} · ${text}`;
 }
 
 async function hydrateVersionInfo() {
   if (!el.appVersion) {
     return;
   }
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
-
   try {
     const response = await fetch("/api/version", {
       method: "GET",
-      headers: {
-        Accept: "application/json"
-      },
+      headers: { Accept: "application/json" },
       signal: controller.signal
     });
-
     if (!response.ok) {
       throw new Error("version_fetch_failed");
     }
-
     const payload = await response.json();
     const version = typeof payload?.version === "string" && payload.version.trim()
       ? payload.version.trim()
@@ -1364,145 +1850,144 @@ async function hydrateVersionInfo() {
   }
 }
 
+function buildMeStatePayload() {
+  return {
+    [STORAGE_KEYS.history]: state.history,
+    [STORAGE_KEYS.mistakes]: state.mistakes,
+    [STORAGE_KEYS.settings]: state.settings,
+    [STORAGE_KEYS.weeklyGoal]: state.weeklyGoal
+  };
+}
+
+function buildSharedPayload() {
+  return {
+    [STORAGE_KEYS.customVocabulary]: state.customVocabulary
+  };
+}
+
 function startRemoteReconnectLoop() {
-  window.setInterval(() => {
-    if (remoteSync.available || remoteSync.connectInFlight || remoteSync.pushInFlight) {
+  if (reconnectIntervalId) {
+    return;
+  }
+  reconnectIntervalId = window.setInterval(() => {
+    if (!state.auth.token) {
       return;
     }
-    void recoverRemoteAndPush();
+    if (remoteSync.pushInFlight || remoteSync.connectInFlight) {
+      return;
+    }
+    if (remoteSync.pendingPush || remoteSync.pendingSharedPush || !remoteSync.available) {
+      void recoverRemoteAndPush();
+    }
   }, 20000);
 }
 
 function scheduleServerPush() {
-  remoteSync.pendingPush = true;
+  if (!state.auth.token) {
+    return;
+  }
+  if (state.auth.role === "student") {
+    remoteSync.pendingPush = true;
+  } else if (state.auth.role === "admin") {
+    remoteSync.pendingSharedPush = true;
+  } else {
+    return;
+  }
+
   if (remoteSync.timerId) {
     clearTimeout(remoteSync.timerId);
   }
-
   remoteSync.timerId = setTimeout(() => {
     remoteSync.timerId = null;
-    if (remoteSync.available) {
-      void pushStateToServer();
-      return;
-    }
-    void recoverRemoteAndPush();
+    void pushStateToServer();
   }, 700);
 }
 
 async function pushStateToServer() {
-  if (!remoteSync.available || remoteSync.pushInFlight || !remoteSync.pendingPush) {
+  if (!state.auth.token || remoteSync.pushInFlight) {
+    return;
+  }
+  if (!remoteSync.pendingPush && !remoteSync.pendingSharedPush) {
     return;
   }
 
   remoteSync.pushInFlight = true;
+  const shouldPushMe = remoteSync.pendingPush;
+  const shouldPushShared = remoteSync.pendingSharedPush;
   remoteSync.pendingPush = false;
-
+  remoteSync.pendingSharedPush = false;
   try {
-    const payload = buildServerStatePayload();
-    const response = await fetch("/api/state", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error("state_push_failed");
+    if (shouldPushMe && state.auth.role === "student") {
+      const meResult = await apiRequest("/api/me/state", {
+        method: "PUT",
+        body: buildMeStatePayload()
+      });
+      if (!meResult.ok) {
+        throw new Error(meResult.error || "student_state_push_failed");
+      }
     }
 
+    if (shouldPushShared && state.auth.role === "admin") {
+      const sharedResult = await apiRequest("/api/admin/shared", {
+        method: "PUT",
+        body: buildSharedPayload()
+      });
+      if (!sharedResult.ok) {
+        throw new Error(sharedResult.error || "shared_state_push_failed");
+      }
+    }
+
+    remoteSync.available = true;
     remoteSync.status = `Synchronisiert: ${new Date().toLocaleTimeString("de-DE", {
       hour: "2-digit",
       minute: "2-digit"
     })}`;
     renderStorageStatus();
-  } catch {
+  } catch (error) {
     remoteSync.available = false;
-    remoteSync.status = "Sync fehlgeschlagen. Lokal weiter gespeichert.";
+    remoteSync.status = `Sync fehlgeschlagen: ${error.message || "Serverfehler"}`;
+    if (shouldPushMe) {
+      remoteSync.pendingPush = true;
+    }
+    if (shouldPushShared) {
+      remoteSync.pendingSharedPush = true;
+    }
     renderStorageStatus();
   } finally {
     remoteSync.pushInFlight = false;
-    if (remoteSync.pendingPush) {
-      void pushStateToServer();
-    }
   }
 }
 
 async function recoverRemoteAndPush() {
-  if (remoteSync.connectInFlight) {
+  if (!state.auth.token || remoteSync.connectInFlight) {
     return;
   }
-
   remoteSync.connectInFlight = true;
   try {
-    const reachable = await canReachServer();
-    if (!reachable) {
-      setRemoteStatus(false, "Nur lokal gespeichert (Server nicht erreichbar).");
+    const sessionState = await apiRequest("/api/auth/session", { method: "GET" });
+    if (!sessionState.ok) {
+      setRemoteStatus(false, "Sitzung nicht verfügbar.");
       return;
     }
 
     setRemoteStatus(true, "Server wieder erreichbar. Synchronisiere …");
-    remoteSync.pendingPush = true;
     await pushStateToServer();
   } finally {
     remoteSync.connectInFlight = false;
   }
 }
 
-async function canReachServer() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
-
-  try {
-    const response = await fetch("/api/state", {
-      method: "GET",
-      headers: {
-        Accept: "application/json"
-      },
-      signal: controller.signal
-    });
-    return response.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function buildServerStatePayload() {
-  return {
-    [STORAGE_KEYS.history]: state.history,
-    [STORAGE_KEYS.mistakes]: state.mistakes,
-    [STORAGE_KEYS.customVocabulary]: state.customVocabulary,
-    [STORAGE_KEYS.settings]: state.settings,
-    [STORAGE_KEYS.admin]: state.adminConfig,
-    [STORAGE_KEYS.weeklyGoal]: state.weeklyGoal
-  };
-}
-
-function isStatePayloadEmpty(payload) {
-  if (!payload || typeof payload !== "object") {
-    return true;
-  }
-
-  const history = Array.isArray(payload[STORAGE_KEYS.history]) ? payload[STORAGE_KEYS.history] : [];
-  const mistakes = payload[STORAGE_KEYS.mistakes];
-  const custom = Array.isArray(payload[STORAGE_KEYS.customVocabulary])
-    ? payload[STORAGE_KEYS.customVocabulary]
-    : [];
-  const admin = payload[STORAGE_KEYS.admin];
-  const weeklyGoal = payload[STORAGE_KEYS.weeklyGoal];
-
-  return (
-    history.length === 0 &&
-    custom.length === 0 &&
-    (!mistakes || Object.keys(mistakes).length === 0) &&
-    (!admin || !admin.backupPin) &&
-    !weeklyGoal
-  );
-}
-
 function updateGamificationWidgets(extraSessionPoints) {
+  if (state.auth.role !== "student") {
+    el.levelBadge.textContent = "Admin-Modus";
+    el.xpBadge.textContent = "XP -";
+    el.playLevelBadge.textContent = "Admin";
+    el.xpBarFill.style.width = "0%";
+    el.nextLevelText.textContent = "Profile und Vorgaben verwalten.";
+    el.motivationLine.textContent = "Admin ist aktiv. Schüler melden sich mit PIN an.";
+    return;
+  }
+
   const totalXp = getTotalXp() + Math.max(0, extraSessionPoints || 0);
   const levelInfo = getLevelInfo(totalXp);
   const levelTitle = getLevelTitle(levelInfo.level);
@@ -1529,7 +2014,6 @@ function getLevelInfo(totalXp) {
   const progressInLevel = safeXp - levelFloor;
   const progressPercent = Math.round((progressInLevel / LEVEL_STEP_XP) * 100);
   const remainingXp = Math.max(0, LEVEL_STEP_XP - progressInLevel);
-
   return {
     level,
     progressPercent: Math.min(100, Math.max(0, progressPercent)),
