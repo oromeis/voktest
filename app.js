@@ -41,7 +41,21 @@ const LEVEL_TITLES = [
   "Sprachdetektiv",
   "Vokabelprofi",
   "Textmeister",
-  "Klassenchampion"
+  "Klassenchampion",
+  "Lernrakete",
+  "Wortakrobat",
+  "Grammatikfuchs",
+  "Sprachstratege",
+  "Vokabelnavigator",
+  "Quizkommandant",
+  "Fehlerjäger",
+  "Satzzauberer",
+  "Punktemagnet",
+  "Levellegende",
+  "Englischheld",
+  "Meisterdenker",
+  "Wortkönig",
+  "Champion Supreme"
 ];
 
 const DEFAULT_ADMIN_CONFIG = {
