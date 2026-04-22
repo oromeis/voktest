@@ -1,4 +1,5 @@
 import { BASE_VOCABULARY } from "./data/vocabulary.js";
+import { BASE_VOCABULARY_FR6 } from "./data/vocabulary-fr6.js";
 import {
   DEFAULT_TARGET_MINUTES,
   computeRewardBonusPoints,
@@ -46,11 +47,14 @@ const DEFAULT_SETTINGS = {
 };
 
 const GRADE_OPTIONS = createGradeOptions();
-const NORMALIZED_BASE_VOCABULARY = normalizeVocabularyList(BASE_VOCABULARY, {
+const NORMALIZED_BASE_VOCABULARY = normalizeVocabularyList(
+  [...BASE_VOCABULARY, ...BASE_VOCABULARY_FR6],
+  {
   fallbackLanguage: DEFAULT_LANGUAGE,
   fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
   idFallbackPrefix: "base"
-});
+}
+);
 
 const LEVEL_STEP_XP = 120;
 const LEVEL_TITLES = [
