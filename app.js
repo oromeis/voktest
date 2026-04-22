@@ -92,6 +92,9 @@ const state = {
 
 const el = {
   authGate: document.getElementById("authGate"),
+  appTop: document.getElementById("appTop"),
+  appMain: document.getElementById("appMain"),
+  tabbar: document.getElementById("tabbar"),
   loginProfileSelect: document.getElementById("loginProfileSelect"),
   loginPinBlock: document.getElementById("loginPinBlock"),
   loginPinInput: document.getElementById("loginPinInput"),
@@ -1711,6 +1714,9 @@ function getDefaultSectionForRole() {
 function applyRoleView() {
   const loggedIn = !!state.auth.token;
   el.authGate.classList.toggle("hidden", loggedIn);
+  el.appTop.classList.toggle("hidden", !loggedIn);
+  el.appMain.classList.toggle("hidden", !loggedIn);
+  el.tabbar.classList.toggle("hidden", !loggedIn);
   el.currentUserBadge.classList.toggle("hidden", !loggedIn);
   el.logoutBtn.classList.toggle("hidden", !loggedIn);
   if (loggedIn && state.auth.user) {
