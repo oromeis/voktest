@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import {
   STORAGE_KEYS,
   hashSecret,
-  migrateStateToV2,
+  migrateStateToV3,
   startServer,
   verifySecret
 } from "../server.js";
@@ -70,7 +70,7 @@ test("hashSecret + verifySecret validates PINs correctly", async () => {
   assert.equal(await verifySecret("1111", hashed.hashHex, hashed.saltHex), false);
 });
 
-test("legacy state migrates to schemaVersion 2 with u_legacy and PIN 0000", async () => {
+test("legacy state migrates to schemaVersion 3 with u_legacy, PIN 0000 and default class", async () => {
   const legacy = {
     [STORAGE_KEYS.history]: [{ total: 10, correct: 9, points: 50 }],
     [STORAGE_KEYS.mistakes]: { a: 2 },
@@ -80,8 +80,8 @@ test("legacy state migrates to schemaVersion 2 with u_legacy and PIN 0000", asyn
     [STORAGE_KEYS.weeklyGoal]: { weekKey: "2026-W16", targetMinutes: 90 }
   };
 
-  const migrated = await migrateStateToV2(legacy);
-  assert.equal(migrated.state.schemaVersion, 2);
+  const migrated = await migrateStateToV3(legacy);
+  assert.equal(migrated.state.schemaVersion, 3);
   assert.equal(migrated.migrated, true);
   assert.equal(migrated.state.auth.profiles.length, 1);
 
@@ -89,6 +89,7 @@ test("legacy state migrates to schemaVersion 2 with u_legacy and PIN 0000", asyn
   assert.equal(profile.id, "u_legacy");
   assert.equal(profile.name, "Schüler 1");
   assert.equal(profile.pinSet, true);
+  assert.equal(profile.schoolGrade, 6);
   assert.equal(await verifySecret("0000", profile.pinHash, profile.pinSalt), true);
 
   const legacyData = migrated.state.userDataById.u_legacy;
@@ -98,12 +99,53 @@ test("legacy state migrates to schemaVersion 2 with u_legacy and PIN 0000", asyn
   assert.equal(Boolean(migrated.state.auth.admin.backupPinHash), true);
 });
 
+test("schemaVersion 2 migrates to v3 and backfills profile class + entry language/grade", async () => {
+  const hashed = await hashSecret("1234");
+  const v2State = {
+    schemaVersion: 2,
+    shared: {
+      customVocabulary: [
+        { id: "c1", english: "cat", german: "Katze", unit: "Unit 1" }
+      ]
+    },
+    auth: {
+      admin: { backupPinHash: "", backupPinSalt: "" },
+      profiles: [
+        {
+          id: "u_a",
+          name: "Alice",
+          active: true,
+          pinSet: true,
+          pinHash: hashed.hashHex,
+          pinSalt: hashed.saltHex
+        }
+      ]
+    },
+    userDataById: {
+      u_a: {
+        [STORAGE_KEYS.history]: [],
+        [STORAGE_KEYS.mistakes]: {},
+        [STORAGE_KEYS.settings]: { mode: "learn" },
+        [STORAGE_KEYS.weeklyGoal]: null
+      }
+    }
+  };
+
+  const migrated = await migrateStateToV3(v2State);
+  assert.equal(migrated.state.schemaVersion, 3);
+  assert.equal(migrated.state.auth.profiles[0].schoolGrade, 6);
+  assert.equal(migrated.state.shared.customVocabulary[0].foreign, "cat");
+  assert.equal(migrated.state.shared.customVocabulary[0].language, "en");
+  assert.equal(migrated.state.shared.customVocabulary[0].schoolGrade, 6);
+});
+
 test("student login exposes only own state and blocks admin routes", async () => {
   await withServer(async ({ baseUrl }) => {
     const profilesRes = await requestJson(baseUrl, "/api/auth/profiles");
     assert.equal(profilesRes.status, 200);
     assert.equal(profilesRes.payload.ok, true);
     assert.equal(profilesRes.payload.profiles.length >= 1, true);
+    assert.equal(profilesRes.payload.profiles[0].schoolGrade, 6);
 
     const wrongLogin = await requestJson(baseUrl, "/api/auth/login", {
       method: "POST",
@@ -117,6 +159,7 @@ test("student login exposes only own state and blocks admin routes", async () =>
     });
     assert.equal(login.status, 200);
     assert.equal(login.payload.ok, true);
+    assert.equal(login.payload.user.schoolGrade, 6);
     const token = login.payload.token;
 
     const meState = await requestJson(baseUrl, "/api/me/state", {
@@ -160,11 +203,12 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     const createProfile = await requestJson(baseUrl, "/api/admin/profiles", {
       method: "POST",
       token: adminToken,
-      body: { name: "Nutzer B" }
+      body: { name: "Nutzer B", schoolGrade: 7 }
     });
     assert.equal(createProfile.status, 201);
     const createdId = createProfile.payload.profile.id;
     assert.equal(createProfile.payload.profile.pinSet, false);
+    assert.equal(createProfile.payload.profile.schoolGrade, 7);
 
     const saveGoal = await requestJson(baseUrl, `/api/admin/profiles/${encodeURIComponent(createdId)}/goal`, {
       method: "PUT",
@@ -192,6 +236,7 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     const editedProfile = profilesOverview.payload.profiles.find((item) => item.id === createdId);
     assert.equal(Boolean(editedProfile), true);
     assert.equal(editedProfile.kpi.weekTargetMinutes, 90);
+    assert.equal(editedProfile.schoolGrade, 7);
 
     const studentLogin = await requestJson(baseUrl, "/api/auth/login", {
       method: "POST",
@@ -229,6 +274,7 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
       token: studentTokenAfterInit
     });
     assert.equal(studentState.status, 200);
+    assert.equal(studentState.payload.user.schoolGrade, 7);
     assert.equal(Array.isArray(studentState.payload.state[STORAGE_KEYS.customVocabulary]), true);
     assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary].length, 1);
 

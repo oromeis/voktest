@@ -1,4 +1,11 @@
 import { normalize } from "./common.js";
+import {
+  DEFAULT_LANGUAGE,
+  DEFAULT_SCHOOL_GRADE,
+  normalizeVocabularyEntry,
+  sanitizeLanguageCode,
+  sanitizeSchoolGrade
+} from "./catalog-utils.js";
 
 const OCR_MIN_GOOD_CANDIDATES = 4;
 const MAX_OCR_IMAGE_EDGE = 2200;
@@ -7,7 +14,8 @@ export function createImportModule({
   state,
   elements,
   persistCustomVocabulary,
-  onVocabularyChanged
+  onVocabularyChanged,
+  getImportContext
 }) {
   let tesseractLoadPromise = null;
   let ocrBusy = false;
@@ -248,7 +256,10 @@ export function createImportModule({
     }
 
     try {
-      const parsed = raw.startsWith("[") ? parseJson(raw) : parseCsv(raw);
+      const importContext = resolveImportContext();
+      const parsed = raw.startsWith("[")
+        ? parseJson(raw, importContext)
+        : parseCsv(raw, importContext);
       if (parsed.length === 0) {
         setImportFeedback("Keine gültigen Datensätze erkannt.", false);
         return;
@@ -271,7 +282,7 @@ export function createImportModule({
     setImportFeedback("Eigene Importe wurden entfernt. Buchdaten bleiben erhalten.", true);
   }
 
-  function parseJson(raw) {
+  function parseJson(raw, importContext) {
     const data = JSON.parse(raw);
     if (!Array.isArray(data)) {
       throw new Error("JSON muss ein Array sein.");
@@ -279,11 +290,11 @@ export function createImportModule({
 
     const stamp = Date.now();
     return data
-      .map((item, index) => toEntry(item, `json-${stamp}-${index}`))
+      .map((item, index) => toEntry(item, `json-${stamp}-${index}`, importContext))
       .filter(Boolean);
   }
 
-  function parseCsv(raw) {
+  function parseCsv(raw, importContext) {
     const lines = raw
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -298,8 +309,16 @@ export function createImportModule({
         let lesson = "";
         let page = "";
         let topic = "";
+        let language = "";
+        let schoolGrade = "";
 
-        if (fields.length >= 6) {
+        if (fields.length >= 8) {
+          lesson = fields[3] || "";
+          page = fields[4] || "";
+          topic = fields[5] || "";
+          language = fields[6] || "";
+          schoolGrade = fields[7] || "";
+        } else if (fields.length >= 6) {
           lesson = fields[3] || "";
           page = fields[4] || "";
           topic = fields[5] || "";
@@ -317,27 +336,49 @@ export function createImportModule({
             unit,
             lesson,
             page,
-            topic
+            topic,
+            language,
+            schoolGrade
           },
-          `csv-${stamp}-${index}`
+          `csv-${stamp}-${index}`,
+          importContext
         );
       })
       .filter(Boolean);
   }
 
-  function toEntry(item, id) {
-    if (!item || !item.english || !item.german) {
+  function toEntry(item, id, importContext) {
+    const normalized = normalizeVocabularyEntry(
+      {
+        ...item,
+        id,
+        foreign: item?.foreign ?? item?.english,
+        language: item?.language || importContext.language,
+        schoolGrade: item?.schoolGrade || importContext.schoolGrade
+      },
+      {
+        fallbackLanguage: importContext.language,
+        fallbackSchoolGrade: importContext.schoolGrade,
+        idFallbackPrefix: "import"
+      }
+    );
+    if (!normalized) {
       return null;
     }
 
     return {
-      id,
-      english: String(item.english).trim(),
-      german: String(item.german).trim(),
-      unit: String(item.unit || "Eigene Unit").trim(),
-      lesson: String(item.lesson || "Allgemein").trim(),
-      page: Number(item.page || 0),
-      topic: String(item.topic || "Import")
+      ...normalized,
+      unit: String(normalized.unit || "Eigene Unit").trim(),
+      lesson: String(normalized.lesson || "Allgemein").trim(),
+      topic: String(normalized.topic || "Import")
+    };
+  }
+
+  function resolveImportContext() {
+    const rawContext = typeof getImportContext === "function" ? getImportContext() : {};
+    return {
+      language: sanitizeLanguageCode(rawContext?.language, DEFAULT_LANGUAGE),
+      schoolGrade: sanitizeSchoolGrade(rawContext?.schoolGrade, DEFAULT_SCHOOL_GRADE)
     };
   }
 

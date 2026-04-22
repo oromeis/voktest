@@ -12,6 +12,17 @@ import {
 import { createHistoryModule } from "./modules/history-module.js";
 import { createImportModule } from "./modules/import-module.js";
 import { isAnswerCorrect, labelMode, shuffle, splitVariants } from "./modules/common.js";
+import {
+  DEFAULT_LANGUAGE,
+  DEFAULT_SCHOOL_GRADE,
+  createGradeOptions,
+  getLanguageDefinition,
+  getSupportedLanguages,
+  getLanguagesForGrade,
+  normalizeVocabularyList,
+  sanitizeLanguageCode,
+  sanitizeSchoolGrade
+} from "./modules/catalog-utils.js";
 
 const STORAGE_KEYS = {
   history: "voktest_history_v1",
@@ -25,11 +36,21 @@ const STORAGE_KEYS = {
 const DEFAULT_SETTINGS = {
   mode: "learn",
   direction: "en-de",
+  language: DEFAULT_LANGUAGE,
   size: 15,
   unit: "all",
   focus: "all",
+  importLanguage: DEFAULT_LANGUAGE,
+  importSchoolGrade: DEFAULT_SCHOOL_GRADE,
   section: "start"
 };
+
+const GRADE_OPTIONS = createGradeOptions();
+const NORMALIZED_BASE_VOCABULARY = normalizeVocabularyList(BASE_VOCABULARY, {
+  fallbackLanguage: DEFAULT_LANGUAGE,
+  fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+  idFallbackPrefix: "base"
+});
 
 const LEVEL_STEP_XP = 120;
 const LEVEL_TITLES = [
@@ -107,6 +128,7 @@ const el = {
   adminLoginCodeInput: document.getElementById("adminLoginCodeInput"),
   adminLoginBtn: document.getElementById("adminLoginBtn"),
   authFeedback: document.getElementById("authFeedback"),
+  appContextBadge: document.getElementById("appContextBadge"),
   currentUserBadge: document.getElementById("currentUserBadge"),
   logoutBtn: document.getElementById("logoutBtn"),
   sectionTabs: Array.from(document.querySelectorAll("[data-section-target]")),
@@ -116,6 +138,7 @@ const el = {
   levelBadge: document.getElementById("levelBadge"),
   xpBadge: document.getElementById("xpBadge"),
   motivationLine: document.getElementById("motivationLine"),
+  languageSelect: document.getElementById("languageSelect"),
   unitSelect: document.getElementById("unitSelect"),
   sizeSelect: document.getElementById("sizeSelect"),
   focusSelect: document.getElementById("focusSelect"),
@@ -155,6 +178,8 @@ const el = {
   ocrFeedback: document.getElementById("ocrFeedback"),
   ocrRawText: document.getElementById("ocrRawText"),
   importTextarea: document.getElementById("importTextarea"),
+  importGradeSelect: document.getElementById("importGradeSelect"),
+  importLanguageSelect: document.getElementById("importLanguageSelect"),
   importBtn: document.getElementById("importBtn"),
   resetBtn: document.getElementById("resetBtn"),
   importFeedback: document.getElementById("importFeedback"),
@@ -166,9 +191,11 @@ const el = {
   weeklyGoalHint: document.getElementById("weeklyGoalHint"),
   adminProfilesList: document.getElementById("adminProfilesList"),
   newProfileNameInput: document.getElementById("newProfileNameInput"),
+  newProfileGradeSelect: document.getElementById("newProfileGradeSelect"),
   createProfileBtn: document.getElementById("createProfileBtn"),
   editProfileSelect: document.getElementById("editProfileSelect"),
   editProfileNameInput: document.getElementById("editProfileNameInput"),
+  editProfileGradeSelect: document.getElementById("editProfileGradeSelect"),
   editProfilePinInput: document.getElementById("editProfilePinInput"),
   editProfileActiveInput: document.getElementById("editProfileActiveInput"),
   editProfileGoalInput: document.getElementById("editProfileGoalInput"),
@@ -206,7 +233,12 @@ const importModule = createImportModule({
     importFeedback: el.importFeedback
   },
   persistCustomVocabulary: () => save(STORAGE_KEYS.customVocabulary, state.customVocabulary),
+  getImportContext: () => ({
+    schoolGrade: sanitizeSchoolGrade(state.settings.importSchoolGrade, DEFAULT_SCHOOL_GRADE),
+    language: sanitizeLanguageCode(state.settings.importLanguage, DEFAULT_LANGUAGE)
+  }),
   onVocabularyChanged: () => {
+    syncLanguageOptions();
     refreshUnitFilters();
     renderIdleState();
   }
@@ -294,6 +326,16 @@ function bindEvents() {
     });
   });
 
+  el.languageSelect.addEventListener("change", () => {
+    state.settings.language = sanitizeLanguageCode(el.languageSelect.value, DEFAULT_LANGUAGE);
+    state.settings.unit = "all";
+    save(STORAGE_KEYS.settings, state.settings);
+    refreshUnitFilters();
+    syncDirectionLabels();
+    updateHeaderContextBadge();
+    renderIdleState();
+  });
+
   el.sizeSelect.addEventListener("change", () => {
     state.settings.size = Number(el.sizeSelect.value);
     save(STORAGE_KEYS.settings, state.settings);
@@ -309,6 +351,23 @@ function bindEvents() {
     state.settings.focus = el.focusSelect.value;
     save(STORAGE_KEYS.settings, state.settings);
   });
+
+  if (el.importGradeSelect) {
+    el.importGradeSelect.addEventListener("change", () => {
+      state.settings.importSchoolGrade = sanitizeSchoolGrade(
+        el.importGradeSelect.value,
+        DEFAULT_SCHOOL_GRADE
+      );
+    });
+  }
+  if (el.importLanguageSelect) {
+    el.importLanguageSelect.addEventListener("change", () => {
+      state.settings.importLanguage = sanitizeLanguageCode(
+        el.importLanguageSelect.value,
+        DEFAULT_LANGUAGE
+      );
+    });
+  }
 
   el.startBtn.addEventListener("click", () => startSession(state.settings.focus));
   el.mistakeBtn.addEventListener("click", () => startSession("mistakes"));
@@ -406,10 +465,47 @@ function bindSectionNavigation() {
 }
 
 function applySettingsToControls() {
+  syncLanguageOptions();
+  syncAdminGradeSelectOptions();
   el.sizeSelect.value = String(state.settings.size);
   el.focusSelect.value = state.settings.focus;
+  if (el.importGradeSelect) {
+    buildSelectOptions(
+      el.importGradeSelect,
+      GRADE_OPTIONS.map((grade) => String(grade)),
+      String(state.settings.importSchoolGrade),
+      ""
+    );
+  }
+  if (el.importLanguageSelect) {
+    const languageValues = getAdminImportLanguageValues();
+    buildLanguageSelectOptions(
+      el.importLanguageSelect,
+      languageValues,
+      state.settings.importLanguage
+    );
+  }
   syncModeButtons();
+  syncDirectionLabels();
   syncDirectionButtons();
+  updateHeaderContextBadge();
+}
+
+function syncAdminGradeSelectOptions() {
+  const gradeValues = GRADE_OPTIONS.map((grade) => String(grade));
+  if (el.newProfileGradeSelect) {
+    const activeNewValue = el.newProfileGradeSelect.value || String(DEFAULT_SCHOOL_GRADE);
+    buildSelectOptions(
+      el.newProfileGradeSelect,
+      gradeValues,
+      activeNewValue,
+      ""
+    );
+  }
+  if (el.editProfileGradeSelect) {
+    const activeGrade = el.editProfileGradeSelect.value || String(DEFAULT_SCHOOL_GRADE);
+    buildSelectOptions(el.editProfileGradeSelect, gradeValues, activeGrade, "");
+  }
 }
 
 function setActiveSection(sectionName) {
@@ -452,7 +548,109 @@ function syncDirectionButtons() {
 }
 
 function getAllVocabulary() {
-  return [...BASE_VOCABULARY, ...state.customVocabulary];
+  const normalizedCustom = normalizeVocabularyList(state.customVocabulary, {
+    fallbackLanguage: DEFAULT_LANGUAGE,
+    fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+    idFallbackPrefix: "custom"
+  });
+  return [...NORMALIZED_BASE_VOCABULARY, ...normalizedCustom];
+}
+
+function getCurrentUserSchoolGrade() {
+  return sanitizeSchoolGrade(state.auth.user?.schoolGrade, DEFAULT_SCHOOL_GRADE);
+}
+
+function getAvailableLanguagesForCurrentGrade() {
+  if (state.auth.role !== "student") {
+    return [];
+  }
+  return getLanguagesForGrade(getAllVocabulary(), getCurrentUserSchoolGrade());
+}
+
+function getAdminImportLanguageValues() {
+  return getSupportedLanguages();
+}
+
+function getActiveLanguageCode() {
+  if (state.auth.role !== "student") {
+    return sanitizeLanguageCode(state.settings.importLanguage, DEFAULT_LANGUAGE);
+  }
+  const available = getAvailableLanguagesForCurrentGrade();
+  if (!available.length) {
+    return "";
+  }
+  return available.includes(state.settings.language)
+    ? state.settings.language
+    : available[0];
+}
+
+function syncLanguageOptions() {
+  if (!el.languageSelect) {
+    return;
+  }
+
+  if (state.auth.role !== "student") {
+    el.languageSelect.innerHTML = "";
+    const option = document.createElement("option");
+    option.value = DEFAULT_LANGUAGE;
+    option.textContent = getLanguageDefinition(DEFAULT_LANGUAGE).label;
+    el.languageSelect.append(option);
+    state.settings.language = DEFAULT_LANGUAGE;
+    return;
+  }
+
+  const values = getAvailableLanguagesForCurrentGrade();
+  el.languageSelect.innerHTML = "";
+  if (!values.length) {
+    const changed = state.settings.language !== "";
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Keine Sprache verfügbar";
+    el.languageSelect.append(option);
+    state.settings.language = "";
+    if (changed) {
+      save(STORAGE_KEYS.settings, state.settings);
+    }
+    return;
+  }
+
+  values.forEach((languageCode) => {
+    const option = document.createElement("option");
+    option.value = languageCode;
+    option.textContent = getLanguageDefinition(languageCode).label;
+    el.languageSelect.append(option);
+  });
+
+  const nextLanguage = values.includes(state.settings.language) ? state.settings.language : values[0];
+  const changed = nextLanguage !== state.settings.language;
+  state.settings.language = nextLanguage;
+  el.languageSelect.value = nextLanguage;
+  if (changed) {
+    save(STORAGE_KEYS.settings, state.settings);
+  }
+}
+
+function syncDirectionLabels() {
+  const language = getLanguageDefinition(getActiveLanguageCode() || DEFAULT_LANGUAGE);
+  el.directionButtons.forEach((button) => {
+    if (button.dataset.direction === "en-de") {
+      button.textContent = `${language.codeLabel} -> DE`;
+    } else {
+      button.textContent = `DE -> ${language.codeLabel}`;
+    }
+  });
+}
+
+function getVocabularyForCurrentSelection() {
+  const schoolGrade = getCurrentUserSchoolGrade();
+  const languageCode = getActiveLanguageCode();
+  if (state.auth.role !== "student" || !languageCode) {
+    return [];
+  }
+
+  return getAllVocabulary().filter(
+    (entry) => entry.schoolGrade === schoolGrade && entry.language === languageCode
+  );
 }
 
 function getEntryUnit(entry) {
@@ -464,7 +662,7 @@ function getEntryUnit(entry) {
 function refreshUnitFilters() {
   const units = [
     ...new Set(
-      getAllVocabulary()
+      getVocabularyForCurrentSelection()
         .filter(Boolean)
         .map((entry) => getEntryUnit(entry))
     )
@@ -497,9 +695,31 @@ function buildSelectOptions(select, values, activeValue, allLabel) {
   save(STORAGE_KEYS.settings, state.settings);
 }
 
+function buildLanguageSelectOptions(select, languageValues, activeLanguage) {
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = "";
+  languageValues.forEach((languageCode) => {
+    const option = document.createElement("option");
+    option.value = languageCode;
+    option.textContent = getLanguageDefinition(languageCode).label;
+    select.append(option);
+  });
+
+  if (languageValues.includes(activeLanguage)) {
+    select.value = activeLanguage;
+    return;
+  }
+  if (languageValues[0]) {
+    select.value = languageValues[0];
+  }
+}
+
 function buildQuestion(entry) {
-  const prompt = state.settings.direction === "en-de" ? entry.english : entry.german;
-  const answerDisplay = state.settings.direction === "en-de" ? entry.german : entry.english;
+  const prompt = state.settings.direction === "en-de" ? entry.foreign : entry.german;
+  const answerDisplay = state.settings.direction === "en-de" ? entry.german : entry.foreign;
 
   return {
     entry,
@@ -509,8 +729,16 @@ function buildQuestion(entry) {
   };
 }
 
+function getQuestionDirectionLabel() {
+  if (state.settings.direction === "en-de") {
+    return "Übersetze ins Deutsche";
+  }
+  const language = getLanguageDefinition(getActiveLanguageCode() || DEFAULT_LANGUAGE);
+  return `Übersetze ins ${language.nominalized}`;
+}
+
 function getPool(focusMode) {
-  const all = getAllVocabulary();
+  const all = getVocabularyForCurrentSelection();
   let pool = all.filter((entry) => {
     if (!entry) {
       return false;
@@ -539,10 +767,25 @@ function startSession(focusMode = "all") {
     setFeedback("Lernrunden sind nur im Schülermodus verfügbar.", false);
     return;
   }
+  const availableLanguages = getAvailableLanguagesForCurrentGrade();
+  if (!availableLanguages.length) {
+    setFeedback(
+      `Für Klasse ${getCurrentUserSchoolGrade()} sind noch keine Sprachkataloge vorhanden.`,
+      false
+    );
+    return;
+  }
+  if (!getActiveLanguageCode()) {
+    setFeedback("Bitte zuerst eine Sprache auswählen.", false);
+    return;
+  }
   ensureCurrentWeeklyGoal();
   const pool = getPool(focusMode);
   if (pool.length === 0) {
-    setFeedback("Keine passenden Vokabeln gefunden. Prüfe Filter oder importiere neue Daten.", false);
+    setFeedback(
+      "Keine passenden Vokabeln gefunden. Prüfe Sprache, Unit-Filter oder importiere neue Daten.",
+      false
+    );
     return;
   }
 
@@ -592,10 +835,7 @@ function renderQuestion() {
   el.progressText.textContent = `Frage ${session.index + 1} von ${session.questions.length}`;
   el.streakChip.textContent = `Streak ${session.streak}`;
   el.pointsChip.textContent = `Punkte ${session.points}`;
-  el.questionLabel.textContent =
-    state.settings.direction === "en-de"
-      ? "Übersetze ins Deutsche"
-      : "Übersetze ins Englische";
+  el.questionLabel.textContent = getQuestionDirectionLabel();
   el.questionText.textContent = question.prompt;
   el.hintText.classList.add("hidden");
   el.hintText.textContent = "";
@@ -629,7 +869,7 @@ function renderMultipleChoice(question) {
   const wrongChoices = shuffle(
     all
       .filter((entry) => entry.id !== question.entry.id)
-      .map((entry) => (state.settings.direction === "en-de" ? entry.german : entry.english))
+      .map((entry) => (state.settings.direction === "en-de" ? entry.german : entry.foreign))
   )
     .slice(0, 3)
     .map((choice) => splitVariants(choice)[0]);
@@ -732,11 +972,18 @@ function renderIdleState() {
     return;
   }
 
-  el.questionLabel.textContent =
-    state.settings.direction === "en-de"
-      ? "Übersetze ins Deutsche"
-      : "Übersetze ins Englische";
-  el.questionText.textContent = `Modus: ${labelMode(state.settings.mode)}. Starte eine neue Runde.`;
+  el.questionLabel.textContent = getQuestionDirectionLabel();
+  if (state.auth.role === "student") {
+    const availableLanguages = getAvailableLanguagesForCurrentGrade();
+    if (!availableLanguages.length) {
+      el.questionText.textContent = `Für Klasse ${getCurrentUserSchoolGrade()} sind aktuell keine Sprachkataloge vorhanden.`;
+    } else {
+      const activeLanguage = getLanguageDefinition(getActiveLanguageCode() || DEFAULT_LANGUAGE).label;
+      el.questionText.textContent = `Sprache: ${activeLanguage}. Modus: ${labelMode(state.settings.mode)}. Starte eine neue Runde.`;
+    }
+  } else {
+    el.questionText.textContent = `Modus: ${labelMode(state.settings.mode)}. Starte eine neue Runde.`;
+  }
   el.answerForm.classList.add("hidden");
   el.mcOptions.classList.add("hidden");
   el.learnActions.classList.add("hidden");
@@ -1135,6 +1382,7 @@ function renderAdminState() {
   if (state.auth.role !== "admin") {
     return;
   }
+  syncAdminGradeSelectOptions();
 
   const profiles = Array.isArray(state.auth.adminProfiles) ? state.auth.adminProfiles : [];
   el.adminProfilesList.innerHTML = "";
@@ -1150,8 +1398,9 @@ function renderAdminState() {
       const weekUsed = Number(profile?.kpi?.weekUsedMinutes) || 0;
       const weekTarget = Number(profile?.kpi?.weekTargetMinutes) || 0;
       const pinStatus = profile.pinSet === false ? "PIN offen" : "PIN gesetzt";
+      const schoolGrade = sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE);
       item.innerHTML = `
-        <p class="recent-head">${profile.name} ${profile.active ? "" : "· (deaktiviert)"}</p>
+        <p class="recent-head">${profile.name} · Klasse ${schoolGrade} ${profile.active ? "" : "· (deaktiviert)"}</p>
         <p>Runden: ${Number(profile?.kpi?.rounds) || 0} · XP gesamt: ${Number(profile?.kpi?.totalXp) || 0} · ${pinStatus}</p>
         <p class="recent-sub">Woche: ${weekUsed}/${weekTarget} Min</p>
       `;
@@ -1190,6 +1439,7 @@ function syncEditProfileFields() {
   if (!profile) {
     el.editProfileNameInput.value = "";
     el.editProfilePinInput.value = "";
+    el.editProfileGradeSelect.value = String(DEFAULT_SCHOOL_GRADE);
     el.editProfileGoalInput.value = String(DEFAULT_TARGET_MINUTES);
     el.editProfileActiveInput.checked = true;
     return;
@@ -1197,6 +1447,9 @@ function syncEditProfileFields() {
 
   const targetMinutes = Number(profile?.kpi?.weekTargetMinutes) || DEFAULT_TARGET_MINUTES;
   el.editProfileNameInput.value = profile.name || "";
+  el.editProfileGradeSelect.value = String(
+    sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE)
+  );
   el.editProfilePinInput.value = "";
   el.editProfileGoalInput.value = String(targetMinutes);
   el.editProfileActiveInput.checked = profile.active !== false;
@@ -1212,11 +1465,13 @@ async function handleCreateProfile() {
     setAdminSettingsFeedback("Bitte Namen für das Profil eingeben.", false);
     return;
   }
+  const schoolGrade = sanitizeSchoolGrade(el.newProfileGradeSelect.value, DEFAULT_SCHOOL_GRADE);
 
   const response = await apiRequest("/api/admin/profiles", {
     method: "POST",
     body: {
-      name
+      name,
+      schoolGrade
     }
   });
   if (!response.ok) {
@@ -1225,6 +1480,7 @@ async function handleCreateProfile() {
   }
 
   el.newProfileNameInput.value = "";
+  el.newProfileGradeSelect.value = String(DEFAULT_SCHOOL_GRADE);
   await refreshAdminProfiles();
   setAdminSettingsFeedback("Profil angelegt. PIN wird beim ersten Login gesetzt.", true);
 }
@@ -1242,7 +1498,8 @@ async function handleSaveProfile() {
 
   const payload = {
     name: el.editProfileNameInput.value.trim(),
-    active: !!el.editProfileActiveInput.checked
+    active: !!el.editProfileActiveInput.checked,
+    schoolGrade: sanitizeSchoolGrade(el.editProfileGradeSelect.value, DEFAULT_SCHOOL_GRADE)
   };
   if (!payload.name) {
     setAdminSettingsFeedback("Profilname darf nicht leer sein.", false);
@@ -1444,7 +1701,9 @@ function renderLoginProfiles() {
   state.auth.profiles.forEach((profile) => {
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = profile.pinSet === false ? `${profile.name} · PIN festlegen` : profile.name;
+    const schoolGrade = sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE);
+    const suffix = profile.pinSet === false ? " · PIN festlegen" : "";
+    option.textContent = `${profile.name} · Klasse ${schoolGrade}${suffix}`;
     el.loginProfileSelect.append(option);
   });
   syncLoginFlowForSelectedProfile();
@@ -1524,7 +1783,12 @@ async function handleStudentLogin() {
 
   state.auth.token = result.token;
   state.auth.role = "student";
-  state.auth.user = result.user || null;
+  state.auth.user = result.user
+    ? {
+        ...result.user,
+        schoolGrade: sanitizeSchoolGrade(result.user.schoolGrade, DEFAULT_SCHOOL_GRADE)
+      }
+    : null;
   el.loginPinInput.value = "";
   await loadStateForRole();
   if (result.warning) {
@@ -1574,7 +1838,12 @@ async function handleInitialPinSetup() {
 
   state.auth.token = result.token;
   state.auth.role = "student";
-  state.auth.user = result.user || null;
+  state.auth.user = result.user
+    ? {
+        ...result.user,
+        schoolGrade: sanitizeSchoolGrade(result.user.schoolGrade, DEFAULT_SCHOOL_GRADE)
+      }
+    : null;
   state.auth.pinSetupProfileId = "";
   el.setupPinInput.value = "";
   el.setupPinConfirmInput.value = "";
@@ -1600,7 +1869,7 @@ async function handleAdminLogin() {
 
   state.auth.token = result.token;
   state.auth.role = "admin";
-  state.auth.user = { id: "admin", name: "Eltern/Admin" };
+  state.auth.user = { id: "admin", name: "Eltern/Admin", schoolGrade: null };
   el.adminLoginCodeInput.value = "";
   await loadStateForRole();
   setAuthFeedback("", true);
@@ -1621,6 +1890,13 @@ async function loadStateForRole() {
       await forceLogoutWithReason(result.error || "Sitzung ungültig.");
       return;
     }
+    if (result.user && typeof result.user === "object") {
+      state.auth.user = {
+        ...state.auth.user,
+        ...result.user,
+        schoolGrade: sanitizeSchoolGrade(result.user.schoolGrade, DEFAULT_SCHOOL_GRADE)
+      };
+    }
     applyStudentState(result.state || {});
     normalizeHistoryEntries();
     ensureCurrentWeeklyGoal();
@@ -1633,7 +1909,11 @@ async function loadStateForRole() {
       await forceLogoutWithReason(shared.error || "Admin-Daten konnten nicht geladen werden.");
       return;
     }
-    state.customVocabulary = Array.isArray(shared.customVocabulary) ? shared.customVocabulary : [];
+    state.customVocabulary = normalizeVocabularyList(shared.customVocabulary, {
+      fallbackLanguage: DEFAULT_LANGUAGE,
+      fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+      idFallbackPrefix: "custom"
+    });
     state.adminConfig = { ...DEFAULT_ADMIN_CONFIG, ...(shared.admin || {}) };
     await refreshAdminProfiles();
   }
@@ -1663,12 +1943,23 @@ function applyStudentState(serverState) {
     state.mistakes = mistakes && typeof mistakes === "object" ? mistakes : {};
   }
   if (has(STORAGE_KEYS.customVocabulary)) {
-    state.customVocabulary = Array.isArray(serverState[STORAGE_KEYS.customVocabulary])
-      ? serverState[STORAGE_KEYS.customVocabulary]
-      : [];
+    state.customVocabulary = normalizeVocabularyList(serverState[STORAGE_KEYS.customVocabulary], {
+      fallbackLanguage: DEFAULT_LANGUAGE,
+      fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+      idFallbackPrefix: "custom"
+    });
   }
   if (has(STORAGE_KEYS.settings)) {
     state.settings = { ...DEFAULT_SETTINGS, ...(serverState[STORAGE_KEYS.settings] || {}) };
+    state.settings.language = sanitizeLanguageCode(state.settings.language, DEFAULT_LANGUAGE);
+    state.settings.importLanguage = sanitizeLanguageCode(
+      state.settings.importLanguage,
+      DEFAULT_LANGUAGE
+    );
+    state.settings.importSchoolGrade = sanitizeSchoolGrade(
+      state.settings.importSchoolGrade,
+      DEFAULT_SCHOOL_GRADE
+    );
   }
   if (has(STORAGE_KEYS.weeklyGoal)) {
     state.weeklyGoal = serverState[STORAGE_KEYS.weeklyGoal] || null;
@@ -1721,10 +2012,16 @@ function applyRoleView() {
   el.logoutBtn.classList.toggle("hidden", !loggedIn);
   if (loggedIn && state.auth.user) {
     const roleLabel = state.auth.role === "admin" ? "Admin" : "Schüler";
-    el.currentUserBadge.textContent = `${roleLabel}: ${state.auth.user.name}`;
+    if (state.auth.role === "student") {
+      const schoolGrade = sanitizeSchoolGrade(state.auth.user.schoolGrade, DEFAULT_SCHOOL_GRADE);
+      el.currentUserBadge.textContent = `${roleLabel}: ${state.auth.user.name} · Klasse ${schoolGrade}`;
+    } else {
+      el.currentUserBadge.textContent = `${roleLabel}: ${state.auth.user.name}`;
+    }
   } else {
     el.currentUserBadge.textContent = "-";
   }
+  updateHeaderContextBadge();
 
   const allowed = getAllowedSections();
   el.sectionTabs.forEach((button) => {
@@ -1732,6 +2029,27 @@ function applyRoleView() {
   });
   const visibleTabCount = Math.max(1, allowed.length);
   el.tabbar.style.setProperty("--tab-count", String(visibleTabCount));
+}
+
+function updateHeaderContextBadge() {
+  if (!el.appContextBadge) {
+    return;
+  }
+
+  if (state.auth.role === "student") {
+    const schoolGrade = sanitizeSchoolGrade(state.auth.user?.schoolGrade, DEFAULT_SCHOOL_GRADE);
+    const languageCode = getActiveLanguageCode();
+    const language = languageCode ? getLanguageDefinition(languageCode).label : "Keine Sprache";
+    el.appContextBadge.textContent = `Klasse ${schoolGrade} · ${language}`;
+    return;
+  }
+
+  if (state.auth.role === "admin") {
+    el.appContextBadge.textContent = "Admin · Verwaltung";
+    return;
+  }
+
+  el.appContextBadge.textContent = "Klasse 6 · Englisch";
 }
 
 function setAuthFeedback(text, ok) {

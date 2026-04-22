@@ -13,6 +13,13 @@ import {
   isDynamicPasswordValid,
   sanitizeTargetMinutes
 } from "./modules/admin-utils.js";
+import {
+  DEFAULT_LANGUAGE,
+  DEFAULT_SCHOOL_GRADE,
+  normalizeVocabularyEntry,
+  sanitizeLanguageCode,
+  sanitizeSchoolGrade
+} from "./modules/catalog-utils.js";
 
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 5173);
@@ -23,6 +30,7 @@ const STATE_FILE = path.join(DATA_DIR, "state.json");
 const VERSION_FILE = path.join(ROOT_DIR, "VERSION");
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000;
+const STATE_SCHEMA_VERSION = 3;
 const APP_VERSION_INFO = resolveAppVersionInfo();
 const SCRYPT = promisify(crypto.scrypt);
 
@@ -70,9 +78,9 @@ function createEmptyUserData() {
   };
 }
 
-function createEmptyV2State() {
+function createEmptyState() {
   return {
-    schemaVersion: 2,
+    schemaVersion: STATE_SCHEMA_VERSION,
     shared: {
       customVocabulary: []
     },
@@ -127,28 +135,31 @@ function sanitizeIsoString(value) {
 }
 
 function sanitizeVocabularyEntry(value) {
-  if (!value || typeof value !== "object") {
+  const normalized = normalizeVocabularyEntry(value, {
+    fallbackLanguage: DEFAULT_LANGUAGE,
+    fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+    idFallbackPrefix: "custom"
+  });
+  if (!normalized) {
     return null;
   }
-
-  const english = typeof value.english === "string" ? value.english.trim() : "";
-  const german = typeof value.german === "string" ? value.german.trim() : "";
-  if (!english || !german) {
-    return null;
-  }
-
-  const id = typeof value.id === "string" && value.id.trim()
-    ? value.id.trim().slice(0, 120)
-    : `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   return {
-    id,
-    english: english.slice(0, 240),
-    german: german.slice(0, 240),
-    unit: typeof value.unit === "string" ? value.unit.trim().slice(0, 80) : "",
-    lesson: typeof value.lesson === "string" ? value.lesson.trim().slice(0, 80) : "",
-    page: typeof value.page === "string" ? value.page.trim().slice(0, 50) : "",
-    topic: typeof value.topic === "string" ? value.topic.trim().slice(0, 80) : ""
+    id: normalized.id,
+    foreign: normalized.foreign,
+    german: normalized.german,
+    language: sanitizeLanguageCode(normalized.language, DEFAULT_LANGUAGE),
+    schoolGrade: sanitizeSchoolGrade(normalized.schoolGrade, DEFAULT_SCHOOL_GRADE),
+    unit: typeof normalized.unit === "string" ? normalized.unit.trim().slice(0, 80) : "",
+    lesson: typeof normalized.lesson === "string" ? normalized.lesson.trim().slice(0, 80) : "",
+    page:
+      typeof normalized.page === "number"
+        ? normalized.page
+        : typeof normalized.page === "string"
+          ? normalized.page.trim().slice(0, 50)
+          : "",
+    topic: typeof normalized.topic === "string" ? normalized.topic.trim().slice(0, 80) : "",
+    example: typeof normalized.example === "string" ? normalized.example.trim().slice(0, 300) : ""
   };
 }
 
@@ -221,6 +232,9 @@ function sanitizeSettings(input) {
   const unit = typeof value.unit === "string" ? value.unit.slice(0, 80) : "all";
   const focus = value.focus === "mistakes" ? "mistakes" : "all";
   const section = typeof value.section === "string" ? value.section.slice(0, 32) : "start";
+  const language = sanitizeLanguageCode(value.language, DEFAULT_LANGUAGE);
+  const importLanguage = sanitizeLanguageCode(value.importLanguage, DEFAULT_LANGUAGE);
+  const importSchoolGrade = sanitizeSchoolGrade(value.importSchoolGrade, DEFAULT_SCHOOL_GRADE);
 
   return {
     mode,
@@ -228,7 +242,10 @@ function sanitizeSettings(input) {
     size,
     unit,
     focus,
-    section
+    section,
+    language,
+    importLanguage,
+    importSchoolGrade
   };
 }
 
@@ -303,6 +320,7 @@ function sanitizeProfile(input) {
     id,
     name: sanitizeName(input.name, "Schüler"),
     active: sanitizeBool(input.active, true),
+    schoolGrade: sanitizeSchoolGrade(input.schoolGrade, DEFAULT_SCHOOL_GRADE),
     pinSet:
       typeof input.pinSet === "boolean"
         ? input.pinSet
@@ -319,13 +337,13 @@ function sanitizeProfile(input) {
   };
 }
 
-function sanitizeStateV2(input) {
-  const safe = createEmptyV2State();
+function sanitizeStateV3(input) {
+  const safe = createEmptyState();
   if (!input || typeof input !== "object") {
     return safe;
   }
 
-  safe.schemaVersion = 2;
+  safe.schemaVersion = STATE_SCHEMA_VERSION;
   safe.shared = sanitizeShared(input.shared);
   safe.auth.admin = sanitizeAdminAuth(input?.auth?.admin);
 
@@ -405,22 +423,27 @@ function hasBackupPin(state) {
   return Boolean(state?.auth?.admin?.backupPinHash && state?.auth?.admin?.backupPinSalt);
 }
 
-async function migrateStateToV2(rawState) {
-  if (rawState && typeof rawState === "object" && rawState.schemaVersion === 2) {
-    const v2 = sanitizeStateV2(rawState);
-    const changed = await ensureProfilesAndPins(v2);
-    return { state: v2, migrated: changed };
+async function migrateStateToV3(rawState) {
+  if (rawState && typeof rawState === "object" && Number(rawState.schemaVersion) >= 3) {
+    const v3 = sanitizeStateV3(rawState);
+    const changed = await ensureProfilesAndPins(v3);
+    return { state: v3, migrated: changed };
+  }
+
+  if (rawState && typeof rawState === "object" && Number(rawState.schemaVersion) === 2) {
+    const migratedFromV2 = sanitizeStateV3(rawState);
+    await ensureProfilesAndPins(migratedFromV2);
+    return { state: migratedFromV2, migrated: true };
   }
 
   const legacy = sanitizeLegacyState(rawState);
-  const migrated = createEmptyV2State();
+  const migrated = createEmptyState();
   migrated.shared.customVocabulary = legacy[STORAGE_KEYS.customVocabulary];
 
   const defaultProfile = await createProfileWithPin({
     id: "u_legacy",
     name: "Schüler 1",
-    pin: "0000",
-    active: true
+    pin: "0000"
   });
   migrated.auth.profiles.push(defaultProfile);
 
@@ -443,13 +466,20 @@ async function migrateStateToV2(rawState) {
   return { state: migrated, migrated: true };
 }
 
-async function createProfileWithPin({ id, name, pin, active = true }) {
+async function createProfileWithPin({
+  id,
+  name,
+  pin,
+  active = true,
+  schoolGrade = DEFAULT_SCHOOL_GRADE
+}) {
   const hashed = await hashSecret(pin);
   const timestamp = new Date().toISOString();
   return {
     id,
     name: sanitizeName(name, "Schüler"),
     active: !!active,
+    schoolGrade: sanitizeSchoolGrade(schoolGrade, DEFAULT_SCHOOL_GRADE),
     pinSet: true,
     pinHash: hashed.hashHex,
     pinSalt: hashed.saltHex,
@@ -458,12 +488,13 @@ async function createProfileWithPin({ id, name, pin, active = true }) {
   };
 }
 
-function createProfileWithoutPin({ id, name, active = true }) {
+function createProfileWithoutPin({ id, name, active = true, schoolGrade = DEFAULT_SCHOOL_GRADE }) {
   const timestamp = new Date().toISOString();
   return {
     id,
     name: sanitizeName(name, "Schüler"),
     active: !!active,
+    schoolGrade: sanitizeSchoolGrade(schoolGrade, DEFAULT_SCHOOL_GRADE),
     pinSet: false,
     pinHash: "",
     pinSalt: "",
@@ -761,19 +792,24 @@ function buildPublicProfile(profile, kpi) {
     name: profile.name,
     active: profile.active !== false,
     pinSet: profile.pinSet !== false,
+    schoolGrade: sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE),
     kpi
   };
 }
 
 function buildSessionUser(v2State, session) {
   if (!session || session.role !== "student") {
-    return { id: "admin", name: "Eltern/Admin" };
+    return { id: "admin", name: "Eltern/Admin", schoolGrade: null };
   }
   const profile = v2State.auth.profiles.find((item) => item.id === session.profileId);
   if (!profile) {
-    return { id: session.profileId, name: "Schüler" };
+    return { id: session.profileId, name: "Schüler", schoolGrade: DEFAULT_SCHOOL_GRADE };
   }
-  return { id: profile.id, name: profile.name };
+  return {
+    id: profile.id,
+    name: profile.name,
+    schoolGrade: sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE)
+  };
 }
 
 async function serveStatic(response, pathname, rootDir) {
@@ -834,19 +870,19 @@ export async function createRuntime({
   sessionTtlMs = SESSION_TTL_MS
 } = {}) {
   await fs.mkdir(dataDir, { recursive: true });
-  await ensureFile(stateFile, createEmptyV2State());
+  await ensureFile(stateFile, createEmptyState());
 
   let state;
   try {
     const rawText = await fs.readFile(stateFile, "utf8");
     const rawState = JSON.parse(rawText);
-    const migration = await migrateStateToV2(rawState);
+    const migration = await migrateStateToV3(rawState);
     state = migration.state;
     if (migration.migrated) {
       await writeJsonAtomic(stateFile, state);
     }
   } catch {
-    state = createEmptyV2State();
+    state = createEmptyState();
     await ensureProfilesAndPins(state);
     await writeJsonAtomic(stateFile, state);
   }
@@ -955,7 +991,8 @@ export async function createRuntime({
       .map((profile) => ({
         id: profile.id,
         name: profile.name,
-        pinSet: profile.pinSet !== false
+        pinSet: profile.pinSet !== false,
+        schoolGrade: sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE)
       }));
 
     sendJson(response, 200, { ok: true, profiles });
@@ -1006,7 +1043,11 @@ export async function createRuntime({
       sendJson(response, 200, {
         ok: true,
         token,
-        user: { id: profile.id, name: profile.name },
+        user: {
+          id: profile.id,
+          name: profile.name,
+          schoolGrade: sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE)
+        },
         warning
       });
     } catch (error) {
@@ -1060,7 +1101,11 @@ export async function createRuntime({
       sendJson(response, 200, {
         ok: true,
         token,
-        user: { id: profile.id, name: profile.name }
+        user: {
+          id: profile.id,
+          name: profile.name,
+          schoolGrade: sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE)
+        }
       });
     } catch (error) {
       if (error.message === "payload_too_large") {
@@ -1158,7 +1203,11 @@ export async function createRuntime({
       sendJson(response, 200, {
         ok: true,
         state: buildStudentStateResponse(state, profile.id),
-        user: { id: profile.id, name: profile.name }
+        user: {
+          id: profile.id,
+          name: profile.name,
+          schoolGrade: sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE)
+        }
       });
       return;
     }
@@ -1297,6 +1346,7 @@ export async function createRuntime({
             sendJson(response, 400, { ok: false, error: "invalid_payload" });
             return;
           }
+          const schoolGrade = sanitizeSchoolGrade(payload.schoolGrade, DEFAULT_SCHOOL_GRADE);
 
           const pin = typeof payload.pin === "string" ? sanitizePinInput(payload.pin) : "";
           let profile;
@@ -1304,6 +1354,7 @@ export async function createRuntime({
             profile = await createProfileWithPin({
               id: createProfileId(),
               name,
+              schoolGrade,
               pin,
               active: true
             });
@@ -1311,6 +1362,7 @@ export async function createRuntime({
             profile = createProfileWithoutPin({
               id: createProfileId(),
               name,
+              schoolGrade,
               active: true
             });
           }
@@ -1452,6 +1504,12 @@ export async function createRuntime({
       }
 
       const nextActive = typeof payload.active === "boolean" ? payload.active : profile.active;
+      const nextSchoolGrade = sanitizeSchoolGrade(
+        Object.prototype.hasOwnProperty.call(payload, "schoolGrade")
+          ? payload.schoolGrade
+          : profile.schoolGrade,
+        DEFAULT_SCHOOL_GRADE
+      );
       const nextPin = typeof payload.pin === "string" ? sanitizePinInput(payload.pin) : "";
       if (typeof payload.pin === "string" && !nextPin) {
         sendJson(response, 400, { ok: false, error: "invalid_pin" });
@@ -1460,6 +1518,7 @@ export async function createRuntime({
 
       profile.name = nextName;
       profile.active = !!nextActive;
+      profile.schoolGrade = nextSchoolGrade;
       profile.updatedAt = nowIso();
 
       if (nextPin) {
@@ -1643,9 +1702,9 @@ export {
   APP_VERSION_INFO,
   STORAGE_KEYS,
   createEmptyUserData,
-  createEmptyV2State,
+  createEmptyState,
   hashSecret,
-  migrateStateToV2,
+  migrateStateToV3,
   sanitizePinInput,
   verifySecret
 };
