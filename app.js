@@ -1730,6 +1730,8 @@ function applyRoleView() {
   el.sectionTabs.forEach((button) => {
     button.classList.toggle("hidden", !allowed.includes(button.dataset.sectionTarget));
   });
+  const visibleTabCount = Math.max(1, allowed.length);
+  el.tabbar.style.setProperty("--tab-count", String(visibleTabCount));
 }
 
 function setAuthFeedback(text, ok) {
