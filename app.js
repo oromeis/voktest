@@ -205,7 +205,6 @@ const el = {
   newProfileNameInput: document.getElementById("newProfileNameInput"),
   newProfileGradeSelect: document.getElementById("newProfileGradeSelect"),
   createProfileBtn: document.getElementById("createProfileBtn"),
-  editProfileSelect: document.getElementById("editProfileSelect"),
   editProfileNameInput: document.getElementById("editProfileNameInput"),
   editProfileGradeSelect: document.getElementById("editProfileGradeSelect"),
   editProfilePinInput: document.getElementById("editProfilePinInput"),
@@ -459,7 +458,6 @@ function bindEvents() {
   el.createProfileBtn.addEventListener("click", () => {
     void handleCreateProfile();
   });
-  el.editProfileSelect.addEventListener("change", syncEditProfileFields);
   el.saveProfileBtn.addEventListener("click", () => {
     void handleSaveProfile();
   });
@@ -1418,37 +1416,6 @@ function renderAdminState() {
   syncAdminGradeSelectOptions();
 
   const profiles = Array.isArray(state.auth.adminProfiles) ? state.auth.adminProfiles : [];
-  el.adminProfilesList.innerHTML = "";
-  if (profiles.length === 0) {
-    const item = document.createElement("li");
-    item.className = "recent-item";
-    item.textContent = "Noch keine Profile angelegt.";
-    el.adminProfilesList.append(item);
-  } else {
-    profiles.forEach((profile) => {
-      const item = document.createElement("li");
-      item.className = "recent-item";
-      const weekUsed = Number(profile?.kpi?.weekUsedMinutes) || 0;
-      const weekTarget = Number(profile?.kpi?.weekTargetMinutes) || 0;
-      const pinStatus = profile.pinSet === false ? "PIN offen" : "PIN gesetzt";
-      const schoolGrade = sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE);
-      item.innerHTML = `
-        <p class="recent-head">${profile.name} · Klasse ${schoolGrade} ${profile.active ? "" : "· (deaktiviert)"}</p>
-        <p>Runden: ${Number(profile?.kpi?.rounds) || 0} · XP gesamt: ${Number(profile?.kpi?.totalXp) || 0} · ${pinStatus}</p>
-        <p class="recent-sub">Woche: ${weekUsed}/${weekTarget} Min</p>
-      `;
-      el.adminProfilesList.append(item);
-    });
-  }
-
-  el.editProfileSelect.innerHTML = "";
-  profiles.forEach((profile) => {
-    const option = document.createElement("option");
-    option.value = profile.id;
-    option.textContent = profile.name;
-    el.editProfileSelect.append(option);
-  });
-
   if (profiles.length > 0) {
     if (!profiles.some((profile) => profile.id === state.auth.selectedProfileId)) {
       state.auth.selectedProfileId = profiles[0].id;
@@ -1462,6 +1429,38 @@ function renderAdminState() {
     };
   }
 
+  el.adminProfilesList.innerHTML = "";
+  if (profiles.length === 0) {
+    const item = document.createElement("li");
+    item.className = "recent-item";
+    item.textContent = "Noch keine Profile angelegt.";
+    el.adminProfilesList.append(item);
+  } else {
+    profiles.forEach((profile) => {
+      const item = document.createElement("li");
+      item.className = "recent-item";
+      const isActive = profile.id === state.auth.selectedProfileId;
+      const weekUsed = Number(profile?.kpi?.weekUsedMinutes) || 0;
+      const weekTarget = Number(profile?.kpi?.weekTargetMinutes) || 0;
+      const pinStatus = profile.pinSet === false ? "PIN offen" : "PIN gesetzt";
+      const schoolGrade = sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `admin-profile-item ${isActive ? "active" : ""}`;
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      button.innerHTML = `
+        <p class="recent-head">${profile.name} · Klasse ${schoolGrade} ${profile.active ? "" : "· (deaktiviert)"}</p>
+        <p>Runden: ${Number(profile?.kpi?.rounds) || 0} · XP gesamt: ${Number(profile?.kpi?.totalXp) || 0} · ${pinStatus}</p>
+        <p class="recent-sub">Woche: ${weekUsed}/${weekTarget} Min</p>
+      `;
+      button.addEventListener("click", () => {
+        setSelectedAdminProfile(profile.id);
+      });
+      item.append(button);
+      el.adminProfilesList.append(item);
+    });
+  }
+
   syncEditProfileFields();
   el.adminBackupPinInput.value = "";
   el.adminBackupPinInput.placeholder = state.adminConfig.backupPinSet ? "Bereits gesetzt" : "Neue PIN";
@@ -1472,7 +1471,7 @@ function syncEditProfileFields() {
   if (state.auth.role !== "admin") {
     return;
   }
-  const selectedId = el.editProfileSelect.value || state.auth.selectedProfileId || "";
+  const selectedId = state.auth.selectedProfileId || "";
   state.auth.selectedProfileId = selectedId;
   if (el.viewProfileHistoryBtn) {
     el.viewProfileHistoryBtn.disabled = !selectedId;
@@ -1500,6 +1499,17 @@ function syncEditProfileFields() {
   el.editProfileGoalInput.value = String(targetMinutes);
   el.editProfileActiveInput.checked = profile.active !== false;
   renderAdminProfileHistory();
+}
+
+function setSelectedAdminProfile(profileId) {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+  if (!profileId || state.auth.selectedProfileId === profileId) {
+    return;
+  }
+  state.auth.selectedProfileId = profileId;
+  renderAdminState();
 }
 
 async function handleCreateProfile() {
