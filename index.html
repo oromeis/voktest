@@ -345,124 +345,158 @@
               Profile verwalten, Wochenziele setzen und gemeinsamen Vokabelbestand steuern.
             </p>
 
-            <div class="admin-card">
-              <h3>Profile</h3>
-              <ul id="adminProfilesList" class="recent-list"></ul>
+            <div class="admin-segmented" role="tablist" aria-label="Admin-Bereiche">
+              <button
+                class="seg-btn active"
+                type="button"
+                data-admin-section-target="profiles"
+                aria-label="Vorhandene Profile verwalten"
+              >
+                Profile
+              </button>
+              <button
+                class="seg-btn"
+                type="button"
+                data-admin-section-target="new"
+                aria-label="Neues Profil erstellen"
+              >
+                Neues Profil
+              </button>
+              <button
+                class="seg-btn"
+                type="button"
+                data-admin-section-target="security"
+                aria-label="Sicherheitseinstellungen"
+              >
+                Sicherheit
+              </button>
             </div>
 
-            <div class="admin-card">
-              <h3>Neues Profil</h3>
-              <label>
-                Name
-                <input id="newProfileNameInput" type="text" maxlength="40" placeholder="z. B. Oliver" />
-              </label>
-              <label>
-                Klassenstufe
-                <select id="newProfileGradeSelect"></select>
-              </label>
-              <div class="action-row">
-                <button id="createProfileBtn" class="secondary-btn icon-btn" type="button" title="Profil anlegen">
-                  <span class="btn-icon" aria-hidden="true">➕</span>
-                  <span>Profil anlegen</span>
-                </button>
+            <div class="admin-section" data-admin-section="profiles">
+              <div class="admin-card">
+                <h3>Vorhandene Profile</h3>
+                <ul id="adminProfilesList" class="recent-list"></ul>
+              </div>
+
+              <div class="admin-card">
+                <h3>Profil bearbeiten</h3>
+                <label>
+                  Profil
+                  <select id="editProfileSelect"></select>
+                </label>
+                <label>
+                  Name
+                  <input id="editProfileNameInput" type="text" maxlength="40" />
+                </label>
+                <label>
+                  Klassenstufe
+                  <select id="editProfileGradeSelect"></select>
+                </label>
+                <label>
+                  Neue PIN (optional)
+                  <input
+                    id="editProfilePinInput"
+                    type="password"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    maxlength="6"
+                    placeholder="leer lassen = unverändert"
+                  />
+                </label>
+                <label class="checkbox-row">
+                  <input id="editProfileActiveInput" type="checkbox" />
+                  Profil ist aktiv
+                </label>
+                <label>
+                  Wochenziel (Minuten)
+                  <input id="editProfileGoalInput" type="number" min="10" max="1200" step="5" />
+                </label>
+                <div class="action-row">
+                  <button id="saveProfileBtn" class="secondary-btn icon-btn" type="button" title="Profil speichern">
+                    <span class="btn-icon" aria-hidden="true">💾</span>
+                    <span>Profil speichern</span>
+                  </button>
+                  <button
+                    id="saveProfileGoalBtn"
+                    class="ghost-btn icon-btn"
+                    type="button"
+                    title="Wochenziel speichern"
+                  >
+                    <span class="btn-icon" aria-hidden="true">🎯</span>
+                    <span>Ziel speichern</span>
+                  </button>
+                  <button
+                    id="viewProfileHistoryBtn"
+                    class="ghost-btn icon-btn"
+                    type="button"
+                    title="Verlauf anzeigen"
+                  >
+                    <span class="btn-icon" aria-hidden="true">📈</span>
+                    <span>Verlauf anzeigen</span>
+                  </button>
+                  <button
+                    id="resetProfilePinBtn"
+                    class="danger-btn icon-btn"
+                    type="button"
+                    title="PIN zurücksetzen"
+                  >
+                    <span class="btn-icon" aria-hidden="true">♻</span>
+                    <span>PIN zurücksetzen</span>
+                  </button>
+                  <button
+                    id="resetProfileProgressBtn"
+                    class="danger-btn icon-btn"
+                    type="button"
+                    title="Fortschritt zurücksetzen"
+                  >
+                    <span class="btn-icon" aria-hidden="true">⚠</span>
+                    <span>Fortschritt zurücksetzen</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="admin-card">
+                <h3 id="adminProfileHistoryTitle">Verlauf</h3>
+                <div id="adminProfileHistoryGrid" class="summary-grid"></div>
+                <ul id="adminProfileHistoryList" class="recent-list"></ul>
               </div>
             </div>
 
-            <div class="admin-card">
-              <h3>Profil bearbeiten</h3>
-              <label>
-                Profil
-                <select id="editProfileSelect"></select>
-              </label>
-              <label>
-                Name
-                <input id="editProfileNameInput" type="text" maxlength="40" />
-              </label>
-              <label>
-                Klassenstufe
-                <select id="editProfileGradeSelect"></select>
-              </label>
-              <label>
-                Neue PIN (optional)
-                <input
-                  id="editProfilePinInput"
-                  type="password"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  maxlength="6"
-                  placeholder="leer lassen = unverändert"
-                />
-              </label>
-              <label class="checkbox-row">
-                <input id="editProfileActiveInput" type="checkbox" />
-                Profil ist aktiv
-              </label>
-              <label>
-                Wochenziel (Minuten)
-                <input id="editProfileGoalInput" type="number" min="10" max="1200" step="5" />
-              </label>
-              <div class="action-row">
-                <button id="saveProfileBtn" class="secondary-btn icon-btn" type="button" title="Profil speichern">
-                  <span class="btn-icon" aria-hidden="true">💾</span>
-                  <span>Profil speichern</span>
-                </button>
-                <button
-                  id="saveProfileGoalBtn"
-                  class="ghost-btn icon-btn"
-                  type="button"
-                  title="Wochenziel speichern"
-                >
-                  <span class="btn-icon" aria-hidden="true">🎯</span>
-                  <span>Ziel speichern</span>
-                </button>
-                <button
-                  id="viewProfileHistoryBtn"
-                  class="ghost-btn icon-btn"
-                  type="button"
-                  title="Verlauf anzeigen"
-                >
-                  <span class="btn-icon" aria-hidden="true">📈</span>
-                  <span>Verlauf anzeigen</span>
-                </button>
-                <button
-                  id="resetProfilePinBtn"
-                  class="danger-btn icon-btn"
-                  type="button"
-                  title="PIN zurücksetzen"
-                >
-                  <span class="btn-icon" aria-hidden="true">♻</span>
-                  <span>PIN zurücksetzen</span>
-                </button>
-                <button
-                  id="resetProfileProgressBtn"
-                  class="danger-btn icon-btn"
-                  type="button"
-                  title="Fortschritt zurücksetzen"
-                >
-                  <span class="btn-icon" aria-hidden="true">⚠</span>
-                  <span>Fortschritt zurücksetzen</span>
-                </button>
+            <div class="admin-section hidden" data-admin-section="new">
+              <div class="admin-card">
+                <h3>Neues Profil</h3>
+                <label>
+                  Name
+                  <input id="newProfileNameInput" type="text" maxlength="40" placeholder="z. B. Oliver" />
+                </label>
+                <label>
+                  Klassenstufe
+                  <select id="newProfileGradeSelect"></select>
+                </label>
+                <div class="action-row">
+                  <button id="createProfileBtn" class="secondary-btn icon-btn" type="button" title="Profil anlegen">
+                    <span class="btn-icon" aria-hidden="true">➕</span>
+                    <span>Profil anlegen</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div class="admin-card">
-              <h3 id="adminProfileHistoryTitle">Verlauf</h3>
-              <ul id="adminProfileHistoryList" class="recent-list"></ul>
-            </div>
-
-            <div class="admin-card">
-              <h3>Admin-Einstellungen</h3>
-              <label>
-                Backup-PIN (mind. 4 Zeichen)
-                <input id="adminBackupPinInput" type="password" minlength="4" autocomplete="off" />
-              </label>
-              <div class="action-row">
-                <button id="saveBackupPinBtn" class="secondary-btn icon-btn" type="button" title="PIN speichern">
-                  <span class="btn-icon" aria-hidden="true">🔑</span>
-                  <span>Backup-PIN speichern</span>
-                </button>
+            <div class="admin-section hidden" data-admin-section="security">
+              <div class="admin-card">
+                <h3>Sicherheit</h3>
+                <label>
+                  Backup-PIN (mind. 4 Zeichen)
+                  <input id="adminBackupPinInput" type="password" minlength="4" autocomplete="off" />
+                </label>
+                <div class="action-row">
+                  <button id="saveBackupPinBtn" class="secondary-btn icon-btn" type="button" title="PIN speichern">
+                    <span class="btn-icon" aria-hidden="true">🔑</span>
+                    <span>Backup-PIN speichern</span>
+                  </button>
+                </div>
+                <p class="admin-meta">Hinweis: Standardprofil startet mit PIN 0000 und sollte geändert werden.</p>
               </div>
-              <p class="admin-meta">Hinweis: Standardprofil startet mit PIN 0000 und sollte geändert werden.</p>
             </div>
 
             <p id="adminSettingsFeedback" class="feedback"></p>

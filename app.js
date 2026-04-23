@@ -12,7 +12,7 @@ import {
 } from "./modules/admin-utils.js";
 import { createHistoryModule } from "./modules/history-module.js";
 import { createImportModule } from "./modules/import-module.js";
-import { isAnswerCorrect, labelMode, shuffle, splitVariants } from "./modules/common.js";
+import { gradeFromPercent, isAnswerCorrect, labelMode, shuffle, splitVariants } from "./modules/common.js";
 import {
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
@@ -41,6 +41,7 @@ const DEFAULT_SETTINGS = {
   size: 15,
   unit: "all",
   focus: "all",
+  adminSection: "profiles",
   importLanguage: DEFAULT_LANGUAGE,
   importSchoolGrade: DEFAULT_SCHOOL_GRADE,
   section: "start"
@@ -95,6 +96,8 @@ const remoteSync = {
   status: "Nicht angemeldet."
 };
 
+const ADMIN_SECTIONS = ["profiles", "new", "security"];
+
 const state = {
   customVocabulary: [],
   history: [],
@@ -142,6 +145,8 @@ const el = {
   logoutBtn: document.getElementById("logoutBtn"),
   sectionTabs: Array.from(document.querySelectorAll("[data-section-target]")),
   sectionPanels: Array.from(document.querySelectorAll("[data-section-panel]")),
+  adminSectionTabs: Array.from(document.querySelectorAll("[data-admin-section-target]")),
+  adminSectionPanels: Array.from(document.querySelectorAll("[data-admin-section]")),
   modeButtons: Array.from(document.querySelectorAll("[data-mode]")),
   directionButtons: Array.from(document.querySelectorAll("[data-direction]")),
   levelBadge: document.getElementById("levelBadge"),
@@ -212,6 +217,7 @@ const el = {
   resetProfilePinBtn: document.getElementById("resetProfilePinBtn"),
   resetProfileProgressBtn: document.getElementById("resetProfileProgressBtn"),
   adminProfileHistoryTitle: document.getElementById("adminProfileHistoryTitle"),
+  adminProfileHistoryGrid: document.getElementById("adminProfileHistoryGrid"),
   adminProfileHistoryList: document.getElementById("adminProfileHistoryList"),
   adminBackupPinInput: document.getElementById("adminBackupPinInput"),
   saveBackupPinBtn: document.getElementById("saveBackupPinBtn"),
@@ -470,6 +476,11 @@ function bindEvents() {
     void handleResetProfileProgress();
   });
   el.saveBackupPinBtn.addEventListener("click", handleSaveBackupPin);
+  el.adminSectionTabs.forEach((button) => {
+    button.addEventListener("click", () => {
+      setActiveAdminSection(button.dataset.adminSectionTarget);
+    });
+  });
 }
 
 function bindSectionNavigation() {
@@ -483,6 +494,7 @@ function bindSectionNavigation() {
 function applySettingsToControls() {
   syncLanguageOptions();
   syncAdminGradeSelectOptions();
+  syncAdminSectionView();
   el.sizeSelect.value = String(state.settings.size);
   el.focusSelect.value = state.settings.focus;
   if (el.importGradeSelect) {
@@ -524,6 +536,29 @@ function syncAdminGradeSelectOptions() {
   }
 }
 
+function sanitizeAdminSection(value) {
+  return ADMIN_SECTIONS.includes(value) ? value : "profiles";
+}
+
+function syncAdminSectionView() {
+  const activeSection = sanitizeAdminSection(state.settings.adminSection);
+  el.adminSectionTabs.forEach((button) => {
+    button.classList.toggle("active", button.dataset.adminSectionTarget === activeSection);
+  });
+  el.adminSectionPanels.forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.adminSection !== activeSection);
+  });
+}
+
+function setActiveAdminSection(sectionName, persist = true) {
+  const nextSection = sanitizeAdminSection(sectionName);
+  state.settings.adminSection = nextSection;
+  if (persist) {
+    save(STORAGE_KEYS.settings, state.settings);
+  }
+  syncAdminSectionView();
+}
+
 function setActiveSection(sectionName) {
   const legacyMap = {
     training: "play",
@@ -547,6 +582,7 @@ function setActiveSection(sectionName) {
   });
 
   if (activeSection === "admin") {
+    setActiveAdminSection(state.settings.adminSection, false);
     renderAdminState();
   }
 }
@@ -1378,6 +1414,7 @@ function renderAdminState() {
   if (state.auth.role !== "admin") {
     return;
   }
+  setActiveAdminSection(state.settings.adminSection, false);
   syncAdminGradeSelectOptions();
 
   const profiles = Array.isArray(state.auth.adminProfiles) ? state.auth.adminProfiles : [];
@@ -1491,6 +1528,8 @@ async function handleCreateProfile() {
 
   el.newProfileNameInput.value = "";
   el.newProfileGradeSelect.value = String(DEFAULT_SCHOOL_GRADE);
+  state.auth.selectedProfileId = response?.profile?.id || state.auth.selectedProfileId;
+  setActiveAdminSection("profiles");
   await refreshAdminProfiles();
   setAdminSettingsFeedback("Profil angelegt. PIN wird beim ersten Login gesetzt.", true);
 }
@@ -1697,7 +1736,7 @@ async function handleSaveBackupPin() {
 }
 
 function renderAdminProfileHistory() {
-  if (!el.adminProfileHistoryList || !el.adminProfileHistoryTitle) {
+  if (!el.adminProfileHistoryList || !el.adminProfileHistoryTitle || !el.adminProfileHistoryGrid) {
     return;
   }
 
@@ -1711,9 +1750,11 @@ function renderAdminProfileHistory() {
   const selectedName = selectedProfile?.name || "Profil";
 
   el.adminProfileHistoryTitle.textContent = `Verlauf · ${selectedName}`;
+  el.adminProfileHistoryGrid.innerHTML = "";
   el.adminProfileHistoryList.innerHTML = "";
 
   if (!selectedId) {
+    renderAdminHistorySummaryCards([]);
     const item = document.createElement("li");
     item.className = "recent-item";
     item.textContent = "Bitte zuerst ein Profil auswählen.";
@@ -1722,6 +1763,7 @@ function renderAdminProfileHistory() {
   }
 
   if (viewed.profileId !== selectedId) {
+    renderAdminHistorySummaryCards([]);
     const item = document.createElement("li");
     item.className = "recent-item";
     item.textContent = "Klicke auf „Verlauf anzeigen“, um die letzten Runden zu laden.";
@@ -1730,6 +1772,8 @@ function renderAdminProfileHistory() {
   }
 
   const entries = Array.isArray(viewed.entries) ? viewed.entries : [];
+  const normalizedRuns = entries.map((entry) => normalizeAdminHistoryRun(entry));
+  renderAdminHistorySummaryCards(normalizedRuns);
   if (!entries.length) {
     const item = document.createElement("li");
     item.className = "recent-item";
@@ -1738,8 +1782,7 @@ function renderAdminProfileHistory() {
     return;
   }
 
-  entries.slice(0, 20).forEach((entry) => {
-    const run = entry && typeof entry === "object" ? entry : {};
+  normalizedRuns.slice(0, 20).forEach((run) => {
     const item = document.createElement("li");
     item.className = "recent-item";
 
@@ -1764,6 +1807,83 @@ function renderAdminProfileHistory() {
     item.append(head, details, options);
     el.adminProfileHistoryList.append(item);
   });
+}
+
+function renderAdminHistorySummaryCards(runs) {
+  if (!el.adminProfileHistoryGrid) {
+    return;
+  }
+  el.adminProfileHistoryGrid.innerHTML = "";
+
+  if (!Array.isArray(runs) || runs.length === 0) {
+    const box = document.createElement("article");
+    box.className = "stat-box";
+    box.innerHTML = `<p class="k">Verlauf</p><p class="v">Noch keine Runde</p>`;
+    el.adminProfileHistoryGrid.append(box);
+    return;
+  }
+
+  const rounds = runs.length;
+  const avgPercent = Math.round(
+    runs.reduce((sum, item) => sum + Math.max(0, Number(item.percent) || 0), 0) / rounds
+  );
+  const avgGrade = (
+    runs.reduce((sum, item) => sum + Math.max(1, Math.min(6, Number(item.grade) || 6)), 0) / rounds
+  ).toFixed(2);
+  const bestRun = Math.max(0, ...runs.map((item) => Math.max(0, Number(item.correct) || 0)));
+  const totalAnswered = runs.reduce((sum, item) => sum + Math.max(0, Number(item.total) || 0), 0);
+  const totalDurationSeconds = runs.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.durationSeconds) || 0),
+    0
+  );
+
+  const cards = [
+    ["Runden", String(rounds)],
+    ["Ø Trefferquote", `${avgPercent}%`],
+    ["Ø Note", avgGrade],
+    ["Bester Durchlauf", `${bestRun} richtig`],
+    ["Antworten gesamt", String(totalAnswered)],
+    ["Trainingszeit", formatRunDuration(totalDurationSeconds)]
+  ];
+
+  cards.forEach(([key, value]) => {
+    const box = document.createElement("article");
+    box.className = "stat-box";
+    box.innerHTML = `<p class="k">${key}</p><p class="v">${value}</p>`;
+    el.adminProfileHistoryGrid.append(box);
+  });
+}
+
+function normalizeAdminHistoryRun(entry) {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const total = Math.max(0, Number(source.total) || 0);
+  const correct = Math.max(0, Math.min(total, Number(source.correct) || 0));
+  const wrong = Math.max(0, Number(source.wrong) || Math.max(0, total - correct));
+  const computedPercent = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const percent = Number.isFinite(Number(source.percent))
+    ? Math.max(0, Math.min(100, Math.round(Number(source.percent))))
+    : computedPercent;
+  const gradeRaw = Number(source.grade);
+  const grade = Number.isFinite(gradeRaw) && gradeRaw >= 1 && gradeRaw <= 6
+    ? Math.round(gradeRaw)
+    : gradeFromPercent(percent);
+
+  return {
+    date: typeof source.date === "string" ? source.date : "",
+    mode: source.mode === "learn" || source.mode === "quiz" || source.mode === "test" ? source.mode : "test",
+    direction: source.direction === "de-en" ? "de-en" : "en-de",
+    language: sanitizeLanguageCode(source.language, DEFAULT_LANGUAGE),
+    unit: typeof source.unit === "string" && source.unit.trim() ? source.unit.trim().slice(0, 80) : "all",
+    focus: source.focus === "mistakes" ? "mistakes" : "all",
+    size: Math.max(1, Math.min(50, Math.round(Number(source.size) || total || 15))),
+    total,
+    correct,
+    wrong,
+    points: Math.max(0, Number(source.points) || 0),
+    durationSeconds: Math.max(0, Math.round(Number(source.durationSeconds) || 0)),
+    percent,
+    grade
+  };
 }
 
 function setAdminSettingsFeedback(text, ok) {
@@ -2108,6 +2228,7 @@ function applyStudentState(serverState) {
   if (has(STORAGE_KEYS.settings)) {
     state.settings = { ...DEFAULT_SETTINGS, ...(serverState[STORAGE_KEYS.settings] || {}) };
     state.settings.language = sanitizeLanguageCode(state.settings.language, DEFAULT_LANGUAGE);
+    state.settings.adminSection = sanitizeAdminSection(state.settings.adminSection);
     state.settings.importLanguage = sanitizeLanguageCode(
       state.settings.importLanguage,
       DEFAULT_LANGUAGE

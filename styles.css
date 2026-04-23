@@ -663,6 +663,23 @@ select + .action-row:not(.mt-10) {
   gap: 12px;
 }
 
+.admin-segmented {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-segmented .seg-btn {
+  min-height: 44px;
+  font-size: 0.98rem;
+  border-radius: 12px;
+}
+
+.admin-section {
+  display: grid;
+  gap: 12px;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;
@@ -735,6 +752,12 @@ select + .action-row:not(.mt-10) {
 .admin-panel .stat-box .v {
   font-size: 1rem;
   line-height: 1.25;
+}
+
+@media (max-width: 560px) {
+  .admin-segmented {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tabbar {
