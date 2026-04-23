@@ -14,8 +14,8 @@
   --border: #c6d8de;
   --radius: 18px;
   --shadow: 0 16px 36px rgba(6, 19, 29, 0.22);
-  --banner-height: 140px;
-  --banner-crop-y: 38%;
+  --banner-height: clamp(160px, 34vw, 560px);
+  --banner-crop-y: 50%;
 }
 
 * {
@@ -119,7 +119,7 @@ body {
   inset: 0;
   object-fit: cover;
   object-position: center var(--banner-crop-y);
-  filter: saturate(0.85) brightness(0.58);
+  filter: saturate(0.94) brightness(0.8);
   transform: none;
 }
 
@@ -128,8 +128,8 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(130deg, rgba(7, 28, 43, 0.5), rgba(9, 51, 70, 0.38)),
-    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.18), transparent 42%);
+    linear-gradient(130deg, rgba(7, 28, 43, 0.22), rgba(9, 51, 70, 0.14)),
+    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.1), transparent 42%);
 }
 
 .brand-banner-overlay {
@@ -920,17 +920,9 @@ select + .action-row:not(.mt-10) {
   .two-col {
     grid-template-columns: 1fr 1fr;
   }
-
-  :root {
-    --banner-height: 184px;
-  }
 }
 
 @media (max-width: 540px) {
-  :root {
-    --banner-height: 110px;
-  }
-
   .brand-banner-overlay {
     padding: 8px;
   }
