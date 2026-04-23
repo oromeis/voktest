@@ -1,4 +1,4 @@
-const CACHE_NAME = "voktest-v20";
+const CACHE_NAME = "voktest-v21";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,6 +11,7 @@ const ASSETS = [
   "./modules/import-module.js",
   "./data/vocabulary.js",
   "./data/vocabulary-fr6.js",
+  "./assets/language-king-banner.jpg",
   "./manifest.webmanifest",
   "./icons/icon.svg"
 ];
@@ -61,10 +62,12 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, copy);
-          });
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, copy);
+            });
+          }
           return response;
         })
         .catch(() =>
@@ -80,10 +83,12 @@ self.addEventListener("fetch", (event) => {
         return cached;
       }
       return fetch(event.request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, copy);
-        });
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, copy);
+          });
+        }
         return response;
       });
     })

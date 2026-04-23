@@ -11,6 +11,7 @@ COPY sw.js ./
 COPY manifest.webmanifest ./
 COPY data ./data
 COPY icons ./icons
+COPY assets ./assets
 COPY modules ./modules
 COPY server-data ./server-data
 
