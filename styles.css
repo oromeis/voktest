@@ -14,6 +14,7 @@
   --border: #c6d8de;
   --radius: 18px;
   --shadow: 0 16px 36px rgba(6, 19, 29, 0.22);
+  --banner-height: 140px;
 }
 
 * {
@@ -70,13 +71,12 @@ body {
 }
 
 .brand-banner--login {
-  min-height: 170px;
-  max-height: 300px;
+  height: var(--banner-height);
 }
 
 .brand-banner--login .brand-banner-image {
   object-fit: cover;
-  object-position: center;
+  object-position: center 38%;
 }
 
 #loginPinBlock,
@@ -97,7 +97,7 @@ body {
 }
 
 .app-top {
-  min-height: 140px;
+  min-height: var(--banner-height);
 }
 
 .header-actions {
@@ -915,23 +915,14 @@ select + .action-row:not(.mt-10) {
     grid-template-columns: 1fr 1fr;
   }
 
-  .brand-banner--login {
-    max-height: 330px;
-  }
-
-  .app-top {
-    min-height: 184px;
+  :root {
+    --banner-height: 184px;
   }
 }
 
 @media (max-width: 540px) {
-  .brand-banner--login {
-    min-height: 132px;
-    max-height: 200px;
-  }
-
-  .app-top {
-    min-height: 110px;
+  :root {
+    --banner-height: 110px;
   }
 
   .brand-banner-overlay {
