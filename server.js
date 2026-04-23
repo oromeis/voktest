@@ -176,6 +176,12 @@ function sanitizeHistoryEntry(entry) {
   const correct = Math.max(0, Math.min(total, Math.round(Number(value.correct) || 0)));
   const wrong = Math.max(0, Math.round(Number(value.wrong) || Math.max(0, total - correct)));
   const percent = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const direction = value.direction === "de-en" ? "de-en" : "en-de";
+  const language = sanitizeLanguageCode(value.language, DEFAULT_LANGUAGE);
+  const unitRaw = typeof value.unit === "string" ? value.unit.trim() : "";
+  const unit = unitRaw ? unitRaw.slice(0, 80) : "all";
+  const focus = value.focus === "mistakes" ? "mistakes" : "all";
+  const size = Math.max(1, Math.min(50, Math.round(Number(value.size) || total || 15)));
 
   return {
     date: sanitizeIsoString(value.date) || new Date().toISOString(),
@@ -183,8 +189,11 @@ function sanitizeHistoryEntry(entry) {
       value.mode === "learn" || value.mode === "quiz" || value.mode === "test"
         ? value.mode
         : "test",
-    direction:
-      value.direction === "en-de" || value.direction === "de-en" ? value.direction : "en-de",
+    direction,
+    language,
+    unit,
+    focus,
+    size,
     total,
     correct,
     wrong,
@@ -1413,6 +1422,55 @@ export async function createRuntime({
       sendJson(response, 200, {
         ok: true,
         profile: buildPublicProfile(profile, getProfileKpi(state, profile.id))
+      });
+      return;
+    }
+
+    const resetProgressMatch = pathname.match(/^\/api\/admin\/profiles\/([^/]+)\/reset-progress$/);
+    if (resetProgressMatch) {
+      if (request.method !== "POST") {
+        sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+        return;
+      }
+
+      const profileId = sanitizeId(decodeURIComponent(resetProgressMatch[1]));
+      const profile = getProfileById(profileId);
+      if (!profile) {
+        sendJson(response, 404, { ok: false, error: "profile_not_found" });
+        return;
+      }
+
+      state.userDataById[profile.id] = sanitizeUserData(createEmptyUserData());
+      invalidateProfileSessions(profile.id);
+      await persistState();
+
+      sendJson(response, 200, {
+        ok: true,
+        profile: buildPublicProfile(profile, getProfileKpi(state, profile.id))
+      });
+      return;
+    }
+
+    const historyMatch = pathname.match(/^\/api\/admin\/profiles\/([^/]+)\/history$/);
+    if (historyMatch) {
+      if (request.method !== "GET") {
+        sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+        return;
+      }
+
+      const profileId = sanitizeId(decodeURIComponent(historyMatch[1]));
+      const profile = getProfileById(profileId);
+      if (!profile) {
+        sendJson(response, 404, { ok: false, error: "profile_not_found" });
+        return;
+      }
+
+      const userData = ensureUserDataById(profile.id);
+      const history = sanitizeHistory(userData[STORAGE_KEYS.history]).slice(0, 120);
+      sendJson(response, 200, {
+        ok: true,
+        profile: buildPublicProfile(profile, getProfileKpi(state, profile.id)),
+        history
       });
       return;
     }

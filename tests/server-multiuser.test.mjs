@@ -278,11 +278,91 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(Array.isArray(studentState.payload.state[STORAGE_KEYS.customVocabulary]), true);
     assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary].length, 1);
 
+    const writeHistory = await requestJson(baseUrl, "/api/me/state", {
+      method: "PUT",
+      token: studentTokenAfterInit,
+      body: {
+        [STORAGE_KEYS.history]: [
+          {
+            date: "2026-04-22T14:30:00.000Z",
+            mode: "quiz",
+            direction: "de-en",
+            language: "fr",
+            unit: "Unité 1",
+            focus: "mistakes",
+            size: 12,
+            total: 12,
+            correct: 10,
+            wrong: 2,
+            points: 77,
+            durationSeconds: 610
+          }
+        ]
+      }
+    });
+    assert.equal(writeHistory.status, 200);
+
+    const adminProfileHistory = await requestJson(
+      baseUrl,
+      `/api/admin/profiles/${encodeURIComponent(createdId)}/history`,
+      {
+        method: "GET",
+        token: adminToken
+      }
+    );
+    assert.equal(adminProfileHistory.status, 200);
+    assert.equal(adminProfileHistory.payload.ok, true);
+    assert.equal(adminProfileHistory.payload.profile.id, createdId);
+    assert.equal(Array.isArray(adminProfileHistory.payload.history), true);
+    assert.equal(adminProfileHistory.payload.history.length, 1);
+    assert.equal(adminProfileHistory.payload.history[0].language, "fr");
+    assert.equal(adminProfileHistory.payload.history[0].unit, "Unité 1");
+    assert.equal(adminProfileHistory.payload.history[0].focus, "mistakes");
+    assert.equal(adminProfileHistory.payload.history[0].size, 12);
+
+    const blockedAdminHistory = await requestJson(
+      baseUrl,
+      `/api/admin/profiles/${encodeURIComponent(createdId)}/history`,
+      {
+        method: "GET",
+        token: studentTokenAfterInit
+      }
+    );
+    assert.equal(blockedAdminHistory.status, 403);
+
+    const resetProgress = await requestJson(
+      baseUrl,
+      `/api/admin/profiles/${encodeURIComponent(createdId)}/reset-progress`,
+      {
+        method: "POST",
+        token: adminToken
+      }
+    );
+    assert.equal(resetProgress.status, 200);
+
+    const historyAfterReset = await requestJson(
+      baseUrl,
+      `/api/admin/profiles/${encodeURIComponent(createdId)}/history`,
+      {
+        method: "GET",
+        token: adminToken
+      }
+    );
+    assert.equal(historyAfterReset.status, 200);
+    assert.equal(Array.isArray(historyAfterReset.payload.history), true);
+    assert.equal(historyAfterReset.payload.history.length, 0);
+
+    const staleStudentTokenAfterReset = await requestJson(baseUrl, "/api/me/state", {
+      method: "GET",
+      token: studentTokenAfterInit
+    });
+    assert.equal(staleStudentTokenAfterReset.status, 401);
+
     const blocked = await requestJson(baseUrl, "/api/admin/shared", {
       method: "GET",
       token: studentTokenAfterInit
     });
-    assert.equal(blocked.status, 403);
+    assert.equal(blocked.status, 401);
 
     const resetPin = await requestJson(
       baseUrl,

@@ -1,7 +1,12 @@
 import { gradeFromPercent, gradeLabel, labelMode } from "./common.js";
+import {
+  DEFAULT_LANGUAGE,
+  getLanguageDefinition,
+  sanitizeLanguageCode
+} from "./catalog-utils.js";
 
 export function createHistoryModule({ state, elements, persistHistory }) {
-  function recordSession(session, direction) {
+  function recordSession(session) {
     const total = Math.max(0, Number(session.questions?.length) || 0);
     const correct = Math.max(0, Number(session.correct) || 0);
     const wrong = Math.max(0, Number(session.wrong) || Math.max(0, total - correct));
@@ -11,7 +16,11 @@ export function createHistoryModule({ state, elements, persistHistory }) {
     const entry = {
       date: new Date().toISOString(),
       mode: session.mode,
-      direction,
+      direction: session.direction === "de-en" ? "de-en" : "en-de",
+      language: sanitizeLanguageCode(session.language, DEFAULT_LANGUAGE),
+      unit: normalizeRunUnit(session.unit),
+      focus: session.focus === "mistakes" ? "mistakes" : "all",
+      size: Math.max(1, Math.min(50, Math.round(Number(session.size) || total || 15))),
       total,
       correct,
       wrong,
@@ -128,7 +137,8 @@ export function createHistoryModule({ state, elements, persistHistory }) {
       item.innerHTML = `
         <p class="recent-head">${formatRunDate(run.date)} · ${labelMode(run.mode)}</p>
         <p>${run.correct}/${run.total} richtig · ${run.percent}% · Note ${run.grade}</p>
-        <p class="recent-sub">Richtung: ${String(run.direction || "--").toUpperCase()} · Punkte: ${run.points} · Zeit: ${formatDuration(run.durationSeconds)}</p>
+        <p class="recent-sub">Richtung: ${formatDirectionLabel(run)} · Punkte: ${run.points} · Zeit: ${formatDuration(run.durationSeconds)}</p>
+        <p class="recent-sub">Optionen: ${formatRunOptions(run)}</p>
       `;
       elements.recentRunsList.append(item);
     });
@@ -167,6 +177,10 @@ function normalizeHistoryForView(history) {
       date: typeof source.date === "string" ? source.date : new Date().toISOString(),
       mode: source.mode === "learn" || source.mode === "quiz" || source.mode === "test" ? source.mode : "test",
       direction: typeof source.direction === "string" ? source.direction : "en-de",
+      language: sanitizeLanguageCode(source.language, DEFAULT_LANGUAGE),
+      unit: normalizeRunUnit(source.unit),
+      focus: source.focus === "mistakes" ? "mistakes" : "all",
+      size: normalizeRunSize(source.size, total),
       total,
       correct,
       wrong,
@@ -182,6 +196,10 @@ function normalizeHistoryForView(history) {
       normalized.date !== source.date ||
       normalized.mode !== source.mode ||
       normalized.direction !== source.direction ||
+      normalized.language !== source.language ||
+      normalized.unit !== source.unit ||
+      normalized.focus !== source.focus ||
+      normalized.size !== source.size ||
       normalized.total !== source.total ||
       normalized.correct !== source.correct ||
       normalized.wrong !== source.wrong ||
@@ -225,4 +243,45 @@ function formatRunDate(value) {
     hour: "2-digit",
     minute: "2-digit"
   });
+}
+
+function formatDirectionLabel(run) {
+  const direction = run?.direction === "de-en" ? "de-en" : "en-de";
+  const language = getLanguageDefinition(run?.language || DEFAULT_LANGUAGE);
+  if (direction === "de-en") {
+    return `DE -> ${language.codeLabel}`;
+  }
+  return `${language.codeLabel} -> DE`;
+}
+
+function formatRunOptions(run) {
+  const unit = run?.unit && run.unit !== "all" ? run.unit : "Alle Units";
+  const focus = run?.focus === "mistakes" ? "Fehlerfokus" : "Alle Vokabeln";
+  const size = Math.max(1, Math.round(Number(run?.size) || Number(run?.total) || 15));
+  return `Unit: ${unit} · Fokus: ${focus} · Fragen: ${size}`;
+}
+
+function normalizeRunUnit(value) {
+  if (typeof value !== "string") {
+    return "all";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "all";
+  }
+  if (trimmed === "all") {
+    return "all";
+  }
+  return trimmed.slice(0, 80);
+}
+
+function normalizeRunSize(value, total) {
+  const parsed = Math.round(Number(value));
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.min(50, parsed);
+  }
+  if (total > 0) {
+    return Math.min(50, total);
+  }
+  return 15;
 }

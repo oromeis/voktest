@@ -111,7 +111,12 @@ const state = {
     profiles: [],
     adminProfiles: [],
     selectedProfileId: "",
-    pinSetupProfileId: ""
+    pinSetupProfileId: "",
+    viewedProfileHistory: {
+      profileId: "",
+      profileName: "",
+      entries: []
+    }
   }
 };
 
@@ -187,8 +192,6 @@ const el = {
   importBtn: document.getElementById("importBtn"),
   resetBtn: document.getElementById("resetBtn"),
   importFeedback: document.getElementById("importFeedback"),
-  resetProgressBtn: document.getElementById("resetProgressBtn"),
-  settingsFeedback: document.getElementById("settingsFeedback"),
   storageStatus: document.getElementById("storageStatus"),
   appVersion: document.getElementById("appVersion"),
   installBtn: document.getElementById("installBtn"),
@@ -205,7 +208,11 @@ const el = {
   editProfileGoalInput: document.getElementById("editProfileGoalInput"),
   saveProfileBtn: document.getElementById("saveProfileBtn"),
   saveProfileGoalBtn: document.getElementById("saveProfileGoalBtn"),
+  viewProfileHistoryBtn: document.getElementById("viewProfileHistoryBtn"),
   resetProfilePinBtn: document.getElementById("resetProfilePinBtn"),
+  resetProfileProgressBtn: document.getElementById("resetProfileProgressBtn"),
+  adminProfileHistoryTitle: document.getElementById("adminProfileHistoryTitle"),
+  adminProfileHistoryList: document.getElementById("adminProfileHistoryList"),
   adminBackupPinInput: document.getElementById("adminBackupPinInput"),
   saveBackupPinBtn: document.getElementById("saveBackupPinBtn"),
   adminSettingsFeedback: document.getElementById("adminSettingsFeedback")
@@ -376,7 +383,6 @@ function bindEvents() {
   el.startBtn.addEventListener("click", () => startSession(state.settings.focus));
   el.mistakeBtn.addEventListener("click", () => startSession("mistakes"));
   el.backToStartBtn.addEventListener("click", () => setActiveSection("start"));
-  el.resetProgressBtn.addEventListener("click", handleResetProgress);
 
   el.answerForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -454,8 +460,14 @@ function bindEvents() {
   el.saveProfileGoalBtn.addEventListener("click", () => {
     void handleSaveProfileGoal();
   });
+  el.viewProfileHistoryBtn.addEventListener("click", () => {
+    void handleViewProfileHistory();
+  });
   el.resetProfilePinBtn.addEventListener("click", () => {
     void handleResetProfilePin();
+  });
+  el.resetProfileProgressBtn.addEventListener("click", () => {
+    void handleResetProfileProgress();
   });
   el.saveBackupPinBtn.addEventListener("click", handleSaveBackupPin);
 }
@@ -796,11 +808,17 @@ function startSession(focusMode = "all") {
   setActiveSection("play");
 
   const size = Math.min(state.settings.size, pool.length);
+  const activeLanguage = getActiveLanguageCode() || DEFAULT_LANGUAGE;
+  const activeDirection = state.settings.direction === "de-en" ? "de-en" : "en-de";
   const selectedEntries = shuffle([...pool]).slice(0, size);
   const questions = selectedEntries.map((entry) => buildQuestion(entry));
 
   state.session = {
     mode: state.settings.mode,
+    direction: activeDirection,
+    language: sanitizeLanguageCode(activeLanguage, DEFAULT_LANGUAGE),
+    unit: state.settings.unit,
+    size,
     focus: focusMode,
     questions,
     index: 0,
@@ -961,7 +979,7 @@ function finishSession() {
 
   finalizeSessionTiming(session);
   applyWeeklyRewardIfEligible(session);
-  const entry = historyModule.recordSession(session, state.settings.direction);
+  const entry = historyModule.recordSession(session);
   historyModule.renderSummary(entry, session.wrongItems);
   historyModule.renderHistory();
   updateGamificationWidgets(0);
@@ -1002,51 +1020,6 @@ function renderIdleState() {
 function setFeedback(text, ok) {
   el.feedbackText.textContent = text;
   el.feedbackText.className = `feedback ${ok ? "ok" : "err"}`;
-}
-
-function setSettingsFeedback(text, ok) {
-  el.settingsFeedback.textContent = text;
-  el.settingsFeedback.className = `feedback ${ok ? "ok" : "err"}`;
-}
-
-function handleResetProgress() {
-  if (state.auth.role !== "student") {
-    setSettingsFeedback("Nur im Schülermodus verfügbar.", false);
-    return;
-  }
-  const accepted = window.confirm(
-    "Wirklich zurücksetzen? Verlauf, Fehlerstatistik, XP und Level werden gelöscht."
-  );
-  if (!accepted) {
-    return;
-  }
-
-  state.session = null;
-  state.history = [];
-  state.mistakes = {};
-  ensureCurrentWeeklyGoal(true);
-  save(STORAGE_KEYS.history, state.history);
-  save(STORAGE_KEYS.mistakes, state.mistakes);
-
-  el.summaryPanel.classList.add("hidden");
-  el.summaryGrid.innerHTML = "";
-  el.gradeText.textContent = "";
-  el.mistakeList.innerHTML = "";
-
-  historyModule.renderHistory();
-  renderIdleState();
-  updateGamificationWidgets(0);
-  renderAdminState();
-  renderWeeklyGoalHint();
-  setSettingsFeedback("Lernfortschritt wurde zurückgesetzt.", true);
-
-  // Reset should be persisted to server immediately (not only via delayed sync).
-  if (remoteSync.available) {
-    remoteSync.pendingPush = true;
-    void pushStateToServer();
-  } else {
-    void recoverRemoteAndPush();
-  }
 }
 
 function bindSessionVisibilityTracking() {
@@ -1128,8 +1101,22 @@ function normalizeHistoryEntries() {
   let changed = false;
   state.history = state.history.map((entry) => {
     const safe = { ...(entry || {}) };
+    const fallbackDirection = safe.direction === "de-en" ? "de-en" : "en-de";
+    const total = Math.max(0, Number(safe.total) || 0);
+    const normalizedSize = Math.max(
+      1,
+      Math.min(50, Math.round(Number(safe.size) || total || 15))
+    );
+    const normalizedUnit = typeof safe.unit === "string" && safe.unit.trim()
+      ? safe.unit.trim().slice(0, 80)
+      : "all";
     const next = {
       ...safe,
+      direction: fallbackDirection,
+      language: sanitizeLanguageCode(safe.language, DEFAULT_LANGUAGE),
+      unit: normalizedUnit,
+      focus: safe.focus === "mistakes" ? "mistakes" : "all",
+      size: normalizedSize,
       points: Math.max(0, Number(safe.points) || 0),
       durationSeconds: Math.max(0, Math.round(Number(safe.durationSeconds) || 0)),
       rewardBonusPoints: Math.max(0, Number(safe.rewardBonusPoints) || 0),
@@ -1145,6 +1132,11 @@ function normalizeHistoryEntries() {
     }
 
     if (
+      next.direction !== safe.direction ||
+      next.language !== safe.language ||
+      next.unit !== safe.unit ||
+      next.focus !== safe.focus ||
+      next.size !== safe.size ||
       next.points !== safe.points ||
       next.durationSeconds !== safe.durationSeconds ||
       next.rewardBonusPoints !== safe.rewardBonusPoints ||
@@ -1426,11 +1418,17 @@ function renderAdminState() {
     }
   } else {
     state.auth.selectedProfileId = "";
+    state.auth.viewedProfileHistory = {
+      profileId: "",
+      profileName: "",
+      entries: []
+    };
   }
 
   syncEditProfileFields();
   el.adminBackupPinInput.value = "";
   el.adminBackupPinInput.placeholder = state.adminConfig.backupPinSet ? "Bereits gesetzt" : "Neue PIN";
+  renderAdminProfileHistory();
 }
 
 function syncEditProfileFields() {
@@ -1439,6 +1437,12 @@ function syncEditProfileFields() {
   }
   const selectedId = el.editProfileSelect.value || state.auth.selectedProfileId || "";
   state.auth.selectedProfileId = selectedId;
+  if (el.viewProfileHistoryBtn) {
+    el.viewProfileHistoryBtn.disabled = !selectedId;
+  }
+  if (el.resetProfileProgressBtn) {
+    el.resetProfileProgressBtn.disabled = !selectedId;
+  }
   const profile = state.auth.adminProfiles.find((item) => item.id === selectedId);
   if (!profile) {
     el.editProfileNameInput.value = "";
@@ -1446,6 +1450,7 @@ function syncEditProfileFields() {
     el.editProfileGradeSelect.value = String(DEFAULT_SCHOOL_GRADE);
     el.editProfileGoalInput.value = String(DEFAULT_TARGET_MINUTES);
     el.editProfileActiveInput.checked = true;
+    renderAdminProfileHistory();
     return;
   }
 
@@ -1457,6 +1462,7 @@ function syncEditProfileFields() {
   el.editProfilePinInput.value = "";
   el.editProfileGoalInput.value = String(targetMinutes);
   el.editProfileActiveInput.checked = profile.active !== false;
+  renderAdminProfileHistory();
 }
 
 async function handleCreateProfile() {
@@ -1592,6 +1598,77 @@ async function handleResetProfilePin() {
   setAdminSettingsFeedback(`PIN für ${profileName} wurde zurückgesetzt.`, true);
 }
 
+async function handleResetProfileProgress() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+
+  const profileId = state.auth.selectedProfileId;
+  if (!profileId) {
+    setAdminSettingsFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+
+  const profile = state.auth.adminProfiles.find((item) => item.id === profileId);
+  const profileName = profile?.name || "dieses Profil";
+  const confirmed = window.confirm(
+    `Fortschritt für ${profileName} zurücksetzen? Verlauf, Fehler, XP und Wochenstatus werden gelöscht.`
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const response = await apiRequest(
+    `/api/admin/profiles/${encodeURIComponent(profileId)}/reset-progress`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    setAdminSettingsFeedback(
+      response.error || "Fortschritt konnte nicht zurückgesetzt werden.",
+      false
+    );
+    return;
+  }
+
+  state.auth.viewedProfileHistory = {
+    profileId: "",
+    profileName: "",
+    entries: []
+  };
+  await refreshAdminProfiles();
+  setAdminSettingsFeedback(`Fortschritt für ${profileName} wurde zurückgesetzt.`, true);
+}
+
+async function handleViewProfileHistory() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+
+  const profileId = state.auth.selectedProfileId;
+  if (!profileId) {
+    setAdminSettingsFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+
+  const response = await apiRequest(
+    `/api/admin/profiles/${encodeURIComponent(profileId)}/history`,
+    { method: "GET" }
+  );
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "Verlauf konnte nicht geladen werden.", false);
+    return;
+  }
+
+  const profileName = response?.profile?.name || "Profil";
+  state.auth.viewedProfileHistory = {
+    profileId,
+    profileName,
+    entries: Array.isArray(response.history) ? response.history : []
+  };
+  renderAdminProfileHistory();
+  setAdminSettingsFeedback(`Verlauf für ${profileName} geladen.`, true);
+}
+
 async function handleSaveBackupPin() {
   if (state.auth.role !== "admin") {
     return;
@@ -1617,6 +1694,76 @@ async function handleSaveBackupPin() {
   state.adminConfig.backupPinSet = true;
   el.adminBackupPinInput.value = "";
   setAdminSettingsFeedback("Backup-PIN gespeichert.", true);
+}
+
+function renderAdminProfileHistory() {
+  if (!el.adminProfileHistoryList || !el.adminProfileHistoryTitle) {
+    return;
+  }
+
+  const selectedId = state.auth.selectedProfileId || "";
+  const viewed = state.auth.viewedProfileHistory || {
+    profileId: "",
+    profileName: "",
+    entries: []
+  };
+  const selectedProfile = state.auth.adminProfiles.find((item) => item.id === selectedId) || null;
+  const selectedName = selectedProfile?.name || "Profil";
+
+  el.adminProfileHistoryTitle.textContent = `Verlauf · ${selectedName}`;
+  el.adminProfileHistoryList.innerHTML = "";
+
+  if (!selectedId) {
+    const item = document.createElement("li");
+    item.className = "recent-item";
+    item.textContent = "Bitte zuerst ein Profil auswählen.";
+    el.adminProfileHistoryList.append(item);
+    return;
+  }
+
+  if (viewed.profileId !== selectedId) {
+    const item = document.createElement("li");
+    item.className = "recent-item";
+    item.textContent = "Klicke auf „Verlauf anzeigen“, um die letzten Runden zu laden.";
+    el.adminProfileHistoryList.append(item);
+    return;
+  }
+
+  const entries = Array.isArray(viewed.entries) ? viewed.entries : [];
+  if (!entries.length) {
+    const item = document.createElement("li");
+    item.className = "recent-item";
+    item.textContent = "Noch keine Runden vorhanden.";
+    el.adminProfileHistoryList.append(item);
+    return;
+  }
+
+  entries.slice(0, 20).forEach((entry) => {
+    const run = entry && typeof entry === "object" ? entry : {};
+    const item = document.createElement("li");
+    item.className = "recent-item";
+
+    const head = document.createElement("p");
+    head.className = "recent-head";
+    head.textContent = `${formatAdminRunDate(run.date)} · ${labelMode(run.mode)} · ${Math.max(
+      0,
+      Number(run.correct) || 0
+    )}/${Math.max(0, Number(run.total) || 0)} richtig`;
+
+    const details = document.createElement("p");
+    details.className = "recent-sub";
+    details.textContent = `Richtung: ${formatAdminHistoryDirection(run.direction, run.language)} · Punkte: ${Math.max(
+      0,
+      Number(run.points) || 0
+    )} · Zeit: ${formatRunDuration(run.durationSeconds)}`;
+
+    const options = document.createElement("p");
+    options.className = "recent-sub";
+    options.textContent = `Optionen: ${formatAdminHistoryOptions(run)}`;
+
+    item.append(head, details, options);
+    el.adminProfileHistoryList.append(item);
+  });
 }
 
 function setAdminSettingsFeedback(text, ok) {
@@ -1649,6 +1796,11 @@ function resetStateForLoggedOut() {
   state.auth.adminProfiles = [];
   state.auth.selectedProfileId = "";
   state.auth.pinSetupProfileId = "";
+  state.auth.viewedProfileHistory = {
+    profileId: "",
+    profileName: "",
+    entries: []
+  };
 }
 
 function showLoggedOutState() {
@@ -2370,6 +2522,46 @@ function getMotivationLine(level) {
     return "Starke Runde bisher. Du spielst schon sehr sicher.";
   }
   return "Top Niveau. Du arbeitest wie ein echter Sprachprofi.";
+}
+
+function formatAdminRunDate(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Unbekannt";
+  }
+  return parsed.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatRunDuration(valueSeconds) {
+  const seconds = Math.max(0, Math.round(Number(valueSeconds) || 0));
+  const totalMinutes = Math.floor(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) {
+    return `${minutes} min`;
+  }
+  return `${hours} h ${minutes} min`;
+}
+
+function formatAdminHistoryDirection(direction, languageCode) {
+  const language = getLanguageDefinition(sanitizeLanguageCode(languageCode, DEFAULT_LANGUAGE));
+  if (direction === "de-en") {
+    return `DE -> ${language.codeLabel}`;
+  }
+  return `${language.codeLabel} -> DE`;
+}
+
+function formatAdminHistoryOptions(entry) {
+  const unitValue = typeof entry?.unit === "string" ? entry.unit.trim() : "";
+  const unit = unitValue && unitValue !== "all" ? unitValue : "Alle Units";
+  const focus = entry?.focus === "mistakes" ? "Fehlerfokus" : "Alle Vokabeln";
+  const size = Math.max(1, Math.round(Number(entry?.size) || Number(entry?.total) || 15));
+  return `Unit: ${unit} · Fokus: ${focus} · Fragen: ${size}`;
 }
 
 function showBigFeedback(text, ok) {

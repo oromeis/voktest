@@ -1,4 +1,4 @@
-const CACHE_NAME = "voktest-v15";
+const CACHE_NAME = "voktest-v17";
 const ASSETS = [
   "./",
   "./index.html",

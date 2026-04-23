@@ -335,26 +335,6 @@
               </button>
             </div>
             <p id="importFeedback" class="feedback"></p>
-
-            <hr class="settings-sep" />
-
-            <h3>Lernfortschritt</h3>
-            <p>
-              Setzt Verlauf, Fehlerstatistik, XP und Level zurück. Deine importierten Vokabeln bleiben
-              erhalten.
-            </p>
-            <div class="action-row">
-              <button
-                id="resetProgressBtn"
-                class="danger-btn icon-btn"
-                type="button"
-                title="Verlauf, XP und Badges zurücksetzen"
-              >
-                <span class="btn-icon" aria-hidden="true">⚠</span>
-                <span>Fortschritt zurücksetzen</span>
-              </button>
-            </div>
-            <p id="settingsFeedback" class="feedback"></p>
           </section>
         </section>
 
@@ -436,6 +416,15 @@
                   <span>Ziel speichern</span>
                 </button>
                 <button
+                  id="viewProfileHistoryBtn"
+                  class="ghost-btn icon-btn"
+                  type="button"
+                  title="Verlauf anzeigen"
+                >
+                  <span class="btn-icon" aria-hidden="true">📈</span>
+                  <span>Verlauf anzeigen</span>
+                </button>
+                <button
                   id="resetProfilePinBtn"
                   class="danger-btn icon-btn"
                   type="button"
@@ -444,7 +433,21 @@
                   <span class="btn-icon" aria-hidden="true">♻</span>
                   <span>PIN zurücksetzen</span>
                 </button>
+                <button
+                  id="resetProfileProgressBtn"
+                  class="danger-btn icon-btn"
+                  type="button"
+                  title="Fortschritt zurücksetzen"
+                >
+                  <span class="btn-icon" aria-hidden="true">⚠</span>
+                  <span>Fortschritt zurücksetzen</span>
+                </button>
               </div>
+            </div>
+
+            <div class="admin-card">
+              <h3 id="adminProfileHistoryTitle">Verlauf</h3>
+              <ul id="adminProfileHistoryList" class="recent-list"></ul>
             </div>
 
             <div class="admin-card">
