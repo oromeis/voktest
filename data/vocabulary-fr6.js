@@ -420,7 +420,7 @@ export const BASE_VOCABULARY_FR6 = [
   {
     "id": "fr6-0039",
     "foreign": "un croissant",
-    "german": "ein Croissant Hörnchen",
+    "german": "ein Croissant, Hörnchen",
     "language": "fr",
     "schoolGrade": 6,
     "unit": "Au début",
@@ -530,7 +530,7 @@ export const BASE_VOCABULARY_FR6 = [
   {
     "id": "fr6-0049",
     "foreign": "un gratin",
-    "german": "ein Auflauf Speise, Gericht",
+    "german": "ein Auflauf, Speise, Gericht",
     "language": "fr",
     "schoolGrade": 6,
     "unit": "Au début",
@@ -2718,7 +2718,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0248",
-    "foreign": "l’athlétisme )m.)",
+    "foreign": "l’athlétisme (m.)",
     "german": "die Leichtathletik",
     "language": "fr",
     "schoolGrade": 6,
@@ -3059,7 +3059,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0279",
-    "foreign": "l’Allemagne )f.)",
+    "foreign": "l’Allemagne (f.)",
     "german": "Deutschland",
     "language": "fr",
     "schoolGrade": 6,
@@ -3653,7 +3653,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0333",
-    "foreign": "l’envie )f.)",
+    "foreign": "l’envie (f.)",
     "german": "die Lust",
     "language": "fr",
     "schoolGrade": 6,
@@ -3664,7 +3664,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0334",
-    "foreign": "l’envie )f.)",
+    "foreign": "l’envie (f.)",
     "german": "das Verlangen",
     "language": "fr",
     "schoolGrade": 6,
@@ -3906,7 +3906,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0356",
-    "foreign": "l’âge )m.)",
+    "foreign": "l’âge (m.)",
     "german": "das Alter",
     "language": "fr",
     "schoolGrade": 6,
@@ -3984,7 +3984,7 @@ export const BASE_VOCABULARY_FR6 = [
   {
     "id": "fr6-0363",
     "foreign": "le 14 Juillet",
-    "german": "der 14. Juli französischer Nationalfeiertag",
+    "german": "der 14. Juli, französischer Nationalfeiertag",
     "language": "fr",
     "schoolGrade": 6,
     "unit": "Unité 3",
@@ -4786,7 +4786,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0436",
-    "foreign": "l’emploi )m.) du temps",
+    "foreign": "l’emploi (m.) du temps",
     "german": "der Stundenplan",
     "language": "fr",
     "schoolGrade": 6,
@@ -5248,7 +5248,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0478",
-    "foreign": "l’anglais )m.)",
+    "foreign": "l’anglais (m.)",
     "german": "Englisch",
     "language": "fr",
     "schoolGrade": 6,
@@ -5270,7 +5270,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0480",
-    "foreign": "l’histoire-géo )f.)",
+    "foreign": "l’histoire-géo (f.)",
     "german": "Geschichte und Erdkunde als Schulfach",
     "language": "fr",
     "schoolGrade": 6,
@@ -5281,7 +5281,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0481",
-    "foreign": "l’éducation musicale )f.)",
+    "foreign": "l’éducation musicale (f.)",
     "german": "Musik als Schulfach",
     "language": "fr",
     "schoolGrade": 6,
@@ -5337,7 +5337,7 @@ export const BASE_VOCABULARY_FR6 = [
   {
     "id": "fr6-0486",
     "foreign": "un arrondissement",
-    "german": "ein Arrondissement ein Verwaltungsbezirk",
+    "german": "ein Arrondissement, ein Verwaltungsbezirk",
     "language": "fr",
     "schoolGrade": 6,
     "unit": "Unité 5",
@@ -5842,7 +5842,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0532",
-    "foreign": "l’après-midi )m.) )f.)",
+    "foreign": "l’après-midi (m.) (f.)",
     "german": "der Nachmittag",
     "language": "fr",
     "schoolGrade": 6,
@@ -5853,7 +5853,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0533",
-    "foreign": "l’après-midi )m.) )f.)",
+    "foreign": "l’après-midi (m.) (f.)",
     "german": "nachmittags",
     "language": "fr",
     "schoolGrade": 6,
@@ -5875,7 +5875,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0535",
-    "foreign": "l’athlétisme )m.)",
+    "foreign": "l’athlétisme (m.)",
     "german": "die Leichtathletik",
     "language": "fr",
     "schoolGrade": 6,
@@ -6722,7 +6722,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0612",
-    "foreign": "l’eau )f.)",
+    "foreign": "l’eau (f.)",
     "german": "das Wasser",
     "language": "fr",
     "schoolGrade": 6,
@@ -7162,7 +7162,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0652",
-    "foreign": "l’arrivée )f.)",
+    "foreign": "l’arrivée (f.)",
     "german": "die Ankunft",
     "language": "fr",
     "schoolGrade": 6,
@@ -8185,8 +8185,8 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0745",
-    "foreign": "l’Arc de triomphe )m.)",
-    "german": "der Arc de triomphe Triumpfbogen",
+    "foreign": "l’Arc de triomphe (m.)",
+    "german": "der Arc de triomphe, Triumpfbogen",
     "language": "fr",
     "schoolGrade": 6,
     "unit": "Unité 7",
@@ -9208,7 +9208,7 @@ export const BASE_VOCABULARY_FR6 = [
   },
   {
     "id": "fr6-0838",
-    "foreign": "l’Internet )m.)",
+    "foreign": "l’Internet (m.)",
     "german": "das Internet",
     "language": "fr",
     "schoolGrade": 6,

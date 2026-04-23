@@ -9,6 +9,7 @@ export function shuffle(array) {
 export function normalize(value) {
   return String(value)
     .toLowerCase()
+    .replace(/ß/g, "ss")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9\säöüß]/gi, " ")
@@ -16,11 +17,8 @@ export function normalize(value) {
     .trim();
 }
 
-export function splitVariants(answerDisplay) {
-  const variants = String(answerDisplay)
-    .split(/[;,/]|\bor\b/gi)
-    .map((part) => part.trim())
-    .filter(Boolean);
+export function splitVariants(answerDisplay, options = {}) {
+  const variants = splitDisplayVariants(answerDisplay);
 
   const normalizedWholeAnswer = normalize(answerDisplay);
   const allowToPrefix = normalizedWholeAnswer.includes("to ");
@@ -32,6 +30,14 @@ export function splitVariants(answerDisplay) {
       return;
     }
     expanded.add(normalized);
+    if (options.optionalGermanUmlautVariants) {
+      const transliterated = normalize(transliterateGermanUmlauts(variant));
+      if (transliterated) {
+        expanded.add(transliterated);
+        expanded.add(foldGermanUmlautDigraphs(transliterated));
+      }
+      expanded.add(foldGermanUmlautDigraphs(normalized));
+    }
     if (normalized.startsWith("to ")) {
       expanded.add(normalized.slice(3));
     } else if (allowToPrefix) {
@@ -39,7 +45,24 @@ export function splitVariants(answerDisplay) {
     }
   });
 
+  if (options.optionalGermanArticles) {
+    const withOptionalArticles = [...expanded];
+    withOptionalArticles.forEach((variant) => {
+      const withoutArticle = stripLeadingGermanArticle(variant);
+      if (withoutArticle && withoutArticle !== variant) {
+        expanded.add(withoutArticle);
+      }
+    });
+  }
+
   return [...expanded];
+}
+
+export function splitDisplayVariants(answerDisplay) {
+  return String(answerDisplay)
+    .split(/[;,/]|\bor\b/gi)
+    .map((part) => part.trim())
+    .filter(Boolean);
 }
 
 export function isAnswerCorrect(answer, validVariants) {
@@ -107,6 +130,58 @@ function isNearMatch(a, b) {
     return false;
   }
   return levenshtein(a, b) <= 1;
+}
+
+function stripLeadingGermanArticle(value) {
+  const parts = String(value)
+    .split(" ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length <= 1) {
+    return value;
+  }
+
+  const leading = parts[0];
+  if (!GERMAN_LEADING_ARTICLES.has(leading)) {
+    return value;
+  }
+  return parts.slice(1).join(" ");
+}
+
+const GERMAN_LEADING_ARTICLES = new Set([
+  "der",
+  "die",
+  "das",
+  "den",
+  "dem",
+  "des",
+  "ein",
+  "eine",
+  "einen",
+  "einem",
+  "einer",
+  "eines",
+  "kein",
+  "keine",
+  "keinen",
+  "keinem",
+  "keiner",
+  "keines"
+]);
+
+function transliterateGermanUmlauts(value) {
+  return String(value)
+    .replace(/[Ää]/g, "ae")
+    .replace(/[Öö]/g, "oe")
+    .replace(/[Üü]/g, "ue")
+    .replace(/ß/g, "ss");
+}
+
+function foldGermanUmlautDigraphs(value) {
+  return String(value)
+    .replace(/ae/g, "a")
+    .replace(/oe/g, "o")
+    .replace(/(^|[^aeiouyq])ue/g, "$1u");
 }
 
 function levenshtein(a, b) {

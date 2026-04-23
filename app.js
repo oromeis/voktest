@@ -12,7 +12,14 @@ import {
 } from "./modules/admin-utils.js";
 import { createHistoryModule } from "./modules/history-module.js";
 import { createImportModule } from "./modules/import-module.js";
-import { gradeFromPercent, isAnswerCorrect, labelMode, shuffle, splitVariants } from "./modules/common.js";
+import {
+  gradeFromPercent,
+  isAnswerCorrect,
+  labelMode,
+  shuffle,
+  splitDisplayVariants,
+  splitVariants
+} from "./modules/common.js";
 import {
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
@@ -770,12 +777,17 @@ function buildLanguageSelectOptions(select, languageValues, activeLanguage) {
 function buildQuestion(entry) {
   const prompt = state.settings.direction === "en-de" ? entry.foreign : entry.german;
   const answerDisplay = state.settings.direction === "en-de" ? entry.german : entry.foreign;
+  const allowOptionalGermanArticles = state.settings.direction === "en-de" && entry.language === "fr";
+  const allowGermanUmlautVariants = state.settings.direction === "en-de";
 
   return {
     entry,
     prompt,
     answerDisplay,
-    answerVariants: splitVariants(answerDisplay)
+    answerVariants: splitVariants(answerDisplay, {
+      optionalGermanArticles: allowOptionalGermanArticles,
+      optionalGermanUmlautVariants: allowGermanUmlautVariants
+    })
   };
 }
 
@@ -928,9 +940,9 @@ function renderMultipleChoice(question) {
       .map((entry) => (state.settings.direction === "en-de" ? entry.german : entry.foreign))
   )
     .slice(0, 3)
-    .map((choice) => splitVariants(choice)[0]);
+    .map((choice) => splitDisplayVariants(choice)[0]);
 
-  const options = shuffle([splitVariants(question.answerDisplay)[0], ...wrongChoices]);
+  const options = shuffle([splitDisplayVariants(question.answerDisplay)[0], ...wrongChoices]);
 
   el.mcOptions.classList.remove("hidden");
   options.forEach((option) => {
@@ -2216,6 +2228,7 @@ async function loadStateForRole() {
   updateGamificationWidgets(0);
   renderAdminState();
   setActiveSection(getDefaultSectionForRole());
+  renderStorageStatus();
   startRemoteReconnectLoop();
 }
 
