@@ -50,6 +50,35 @@ body {
   gap: 10px;
 }
 
+.auth-card {
+  display: grid;
+  gap: 10px;
+}
+
+.brand-banner {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  padding: 0;
+  background: #0f2a47;
+}
+
+.brand-banner-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.brand-banner--login {
+  min-height: 170px;
+  max-height: 300px;
+}
+
+.brand-banner--login .brand-banner-image {
+  object-fit: cover;
+  object-position: center;
+}
+
 #loginPinBlock,
 #pinSetupBlock {
   display: grid;
@@ -68,10 +97,7 @@ body {
 }
 
 .app-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
+  min-height: 140px;
 }
 
 .header-actions {
@@ -82,15 +108,45 @@ body {
   justify-content: flex-end;
 }
 
+.brand-banner--main .brand-banner-image {
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+  object-position: center 36%;
+  filter: saturate(0.85) brightness(0.58);
+  transform: scale(1.03);
+}
+
+.brand-banner--main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(130deg, rgba(7, 28, 43, 0.5), rgba(9, 51, 70, 0.38)),
+    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.18), transparent 42%);
+}
+
+.brand-banner-overlay {
+  position: relative;
+  z-index: 1;
+  min-height: inherit;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .badge {
   display: inline-block;
   margin: 0;
   padding: 5px 10px;
   border-radius: 999px;
-  background: #bfeaf4;
-  color: #114a61;
+  background: rgba(225, 243, 250, 0.96);
+  color: #124256;
   font-weight: 800;
   font-size: 0.79rem;
+  border: 1px solid rgba(137, 188, 209, 0.56);
 }
 
 h1 {
@@ -270,9 +326,9 @@ h3 {
 }
 
 .ghost-btn {
-  background: #edf4f6;
+  background: rgba(237, 244, 246, 0.95);
   color: #244757;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(187, 211, 221, 0.9);
 }
 
 .option-btn {
@@ -858,9 +914,30 @@ select + .action-row:not(.mt-10) {
   .two-col {
     grid-template-columns: 1fr 1fr;
   }
+
+  .brand-banner--login {
+    max-height: 330px;
+  }
+
+  .app-top {
+    min-height: 184px;
+  }
 }
 
 @media (max-width: 540px) {
+  .brand-banner--login {
+    min-height: 132px;
+    max-height: 200px;
+  }
+
+  .app-top {
+    min-height: 110px;
+  }
+
+  .brand-banner-overlay {
+    padding: 8px;
+  }
+
   .tab-text {
     display: none;
   }
