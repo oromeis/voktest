@@ -14,7 +14,7 @@
   --border: #c6d8de;
   --radius: 18px;
   --shadow: 0 16px 36px rgba(6, 19, 29, 0.22);
-  --banner-height: clamp(160px, 34vw, 560px);
+  --banner-height: clamp(124px, 15vw, 210px);
   --banner-crop-y: 50%;
 }
 
