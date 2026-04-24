@@ -75,8 +75,8 @@ body {
 }
 
 .brand-banner--login .brand-banner-image {
-  object-fit: contain;
-  object-position: center;
+  object-fit: cover;
+  object-position: center 50%;
 }
 
 #loginPinBlock,
@@ -116,8 +116,8 @@ body {
 .brand-banner--main .brand-banner-image {
   position: absolute;
   inset: 0;
-  object-fit: contain;
-  object-position: center;
+  object-fit: cover;
+  object-position: center 50%;
   filter: saturate(0.94) brightness(0.8);
   transform: none;
 }
