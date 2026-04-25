@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
+  getLanguageDefinition,
   getLanguagesForGrade,
   normalizeVocabularyEntry,
   sanitizeLanguageCode,
@@ -35,8 +36,16 @@ test("sanitizeSchoolGrade clamps to 5-13 range", () => {
 test("sanitizeLanguageCode only accepts known languages", () => {
   assert.equal(sanitizeLanguageCode("en", "fr"), "en");
   assert.equal(sanitizeLanguageCode("fr", "en"), "fr");
+  assert.equal(sanitizeLanguageCode("la", "en"), "la");
   assert.equal(sanitizeLanguageCode("es", "fr"), "fr");
   assert.equal(sanitizeLanguageCode("", "en"), "en");
+});
+
+test("getLanguageDefinition returns labels for latin", () => {
+  const language = getLanguageDefinition("la");
+  assert.equal(language.code, "la");
+  assert.equal(language.codeLabel, "LA");
+  assert.equal(language.label, "Latein");
 });
 
 test("getLanguagesForGrade returns unique language codes for given grade", () => {
@@ -44,10 +53,11 @@ test("getLanguagesForGrade returns unique language codes for given grade", () =>
     { foreign: "cat", german: "Katze", language: "en", schoolGrade: 6 },
     { foreign: "dog", german: "Hund", language: "en", schoolGrade: 6 },
     { foreign: "bonjour", german: "hallo", language: "fr", schoolGrade: 6 },
+    { foreign: "amo", german: "ich liebe", language: "la", schoolGrade: 6 },
     { foreign: "merci", german: "danke", language: "fr", schoolGrade: 7 }
   ];
 
-  assert.deepEqual(getLanguagesForGrade(entries, 6), ["en", "fr"]);
+  assert.deepEqual(getLanguagesForGrade(entries, 6), ["en", "fr", "la"]);
   assert.deepEqual(getLanguagesForGrade(entries, 7), ["fr"]);
   assert.deepEqual(getLanguagesForGrade(entries, 8), []);
 });

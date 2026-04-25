@@ -37,6 +37,12 @@ export function createImportModule({
       return;
     }
 
+    const importContext = resolveImportContext();
+    if (importContext.language === "la") {
+      setOcrFeedback("Für Latein bitte CSV/JSON-Import nutzen (OCR folgt später).", true);
+      return;
+    }
+
     ocrBusy = true;
     elements.ocrBtn.disabled = true;
     setOcrFeedback("OCR wird vorbereitet...", true);

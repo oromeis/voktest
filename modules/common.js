@@ -9,6 +9,8 @@ export function shuffle(array) {
 export function normalize(value) {
   return String(value)
     .toLowerCase()
+    .replace(/æ/g, "ae")
+    .replace(/œ/g, "oe")
     .replace(/ß/g, "ss")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -52,6 +54,18 @@ export function splitVariants(answerDisplay, options = {}) {
       if (withoutArticle && withoutArticle !== variant) {
         expanded.add(withoutArticle);
       }
+    });
+  }
+
+  if (options.optionalLatinOrthography) {
+    const latinVariants = [...expanded];
+    latinVariants.forEach((variant) => {
+      expandLatinOrthographyVariants(variant).forEach((candidate) => {
+        const normalizedCandidate = normalize(candidate);
+        if (normalizedCandidate) {
+          expanded.add(normalizedCandidate);
+        }
+      });
     });
   }
 
@@ -168,6 +182,50 @@ const GERMAN_LEADING_ARTICLES = new Set([
   "keiner",
   "keines"
 ]);
+
+function expandLatinOrthographyVariants(value) {
+  const seed = String(value || "").trim();
+  if (!seed) {
+    return [];
+  }
+
+  const swapMap = {
+    u: "v",
+    v: "u",
+    i: "j",
+    j: "i"
+  };
+
+  const swapIndices = [];
+  for (let index = 0; index < seed.length; index += 1) {
+    if (swapMap[seed[index]]) {
+      swapIndices.push(index);
+    }
+  }
+
+  if (!swapIndices.length) {
+    return [seed];
+  }
+
+  const maxPositions = Math.min(10, swapIndices.length);
+  const maxVariants = 128;
+  const seen = new Set([seed]);
+
+  const totalMasks = 2 ** maxPositions;
+  for (let mask = 1; mask < totalMasks && seen.size < maxVariants; mask += 1) {
+    const chars = seed.split("");
+    for (let bit = 0; bit < maxPositions; bit += 1) {
+      if ((mask & (1 << bit)) === 0) {
+        continue;
+      }
+      const swapIndex = swapIndices[bit];
+      chars[swapIndex] = swapMap[chars[swapIndex]] || chars[swapIndex];
+    }
+    seen.add(chars.join(""));
+  }
+
+  return [...seen];
+}
 
 function transliterateGermanUmlauts(value) {
   return String(value)

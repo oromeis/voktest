@@ -15,6 +15,12 @@ export const LANGUAGE_DEFINITIONS = {
     codeLabel: "FR",
     label: "Französisch",
     nominalized: "Französische"
+  },
+  la: {
+    code: "la",
+    codeLabel: "LA",
+    label: "Latein",
+    nominalized: "Lateinische"
   }
 };
 

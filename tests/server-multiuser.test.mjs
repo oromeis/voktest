@@ -222,7 +222,14 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
       token: adminToken,
       body: {
         [STORAGE_KEYS.customVocabulary]: [
-          { id: "shared-1", english: "apple", german: "Apfel", unit: "Unit 1" }
+          {
+            id: "shared-1",
+            foreign: "amor",
+            german: "Liebe",
+            language: "la",
+            schoolGrade: 7,
+            unit: "Unit L1"
+          }
         ]
       }
     });
@@ -277,6 +284,8 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(studentState.payload.user.schoolGrade, 7);
     assert.equal(Array.isArray(studentState.payload.state[STORAGE_KEYS.customVocabulary]), true);
     assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary].length, 1);
+    assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary][0].language, "la");
+    assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary][0].foreign, "amor");
 
     const writeHistory = await requestJson(baseUrl, "/api/me/state", {
       method: "PUT",
@@ -287,8 +296,8 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
             date: "2026-04-22T14:30:00.000Z",
             mode: "quiz",
             direction: "de-en",
-            language: "fr",
-            unit: "Unité 1",
+            language: "la",
+            unit: "Unit L1",
             focus: "mistakes",
             size: 12,
             total: 12,
@@ -315,8 +324,8 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(adminProfileHistory.payload.profile.id, createdId);
     assert.equal(Array.isArray(adminProfileHistory.payload.history), true);
     assert.equal(adminProfileHistory.payload.history.length, 1);
-    assert.equal(adminProfileHistory.payload.history[0].language, "fr");
-    assert.equal(adminProfileHistory.payload.history[0].unit, "Unité 1");
+    assert.equal(adminProfileHistory.payload.history[0].language, "la");
+    assert.equal(adminProfileHistory.payload.history[0].unit, "Unit L1");
     assert.equal(adminProfileHistory.payload.history[0].focus, "mistakes");
     assert.equal(adminProfileHistory.payload.history[0].size, 12);
 

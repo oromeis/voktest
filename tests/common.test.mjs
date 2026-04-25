@@ -45,6 +45,24 @@ test("German sharp s variants accept ss", () => {
   assert.equal(isAnswerCorrect("gross", variants), true);
 });
 
+test("DE->LA accepts i/j and u/v spelling variants in latin mode", () => {
+  const variants = splitVariants("Iulius iuvenis", { optionalLatinOrthography: true });
+
+  assert.equal(isAnswerCorrect("Julius juvenis", variants), true);
+});
+
+test("Latin ligatures are normalized to ae/oe variants", () => {
+  const variants = splitVariants("foedus", { optionalLatinOrthography: true });
+
+  assert.equal(isAnswerCorrect("fœdus", variants), true);
+});
+
+test("Latin mode remains strict for grammatical endings", () => {
+  const variants = splitVariants("amicus", { optionalLatinOrthography: true });
+
+  assert.equal(isAnswerCorrect("amici", variants), false);
+});
+
 test("splitDisplayVariants keeps umlauts and original casing for UI labels", () => {
   const variants = splitDisplayVariants("Möbel; Äpfel / Öl");
 

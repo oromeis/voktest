@@ -1,5 +1,6 @@
 import { BASE_VOCABULARY } from "./data/vocabulary.js";
 import { BASE_VOCABULARY_FR6 } from "./data/vocabulary-fr6.js";
+import { BASE_VOCABULARY_LA6 } from "./data/vocabulary-la6.js";
 import {
   DEFAULT_TARGET_MINUTES,
   computeRewardBonusPoints,
@@ -56,7 +57,7 @@ const DEFAULT_SETTINGS = {
 
 const GRADE_OPTIONS = createGradeOptions();
 const NORMALIZED_BASE_VOCABULARY = normalizeVocabularyList(
-  [...BASE_VOCABULARY, ...BASE_VOCABULARY_FR6],
+  [...BASE_VOCABULARY, ...BASE_VOCABULARY_FR6, ...BASE_VOCABULARY_LA6],
   {
   fallbackLanguage: DEFAULT_LANGUAGE,
   fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
@@ -85,7 +86,27 @@ const LEVEL_TITLES = [
   "Englischheld",
   "Meisterdenker",
   "Wortkönig",
-  "Champion Supreme"
+  "Champion Supreme",
+  "Spracharchitekt",
+  "Wissenswirbel",
+  "Vokabelblitz",
+  "Lernkompass",
+  "Satzakrobatin",
+  "Übungsass",
+  "Sprachpilot",
+  "Grammatikgenie",
+  "Quizmagier",
+  "Wortchampion",
+  "Lernlegende",
+  "Sprachenjäger",
+  "Phrasenprofi",
+  "Vokabelmeister",
+  "Sprachsammler",
+  "Antwortkünstler",
+  "Turbo-Lerner",
+  "Worttaktiker",
+  "Meister der Modi",
+  "Language-King-Legende"
 ];
 
 const DEFAULT_ADMIN_CONFIG = {
@@ -197,6 +218,7 @@ const el = {
   ocrFileInput: document.getElementById("ocrFileInput"),
   ocrBtn: document.getElementById("ocrBtn"),
   ocrFeedback: document.getElementById("ocrFeedback"),
+  importOcrHint: document.getElementById("importOcrHint"),
   ocrRawText: document.getElementById("ocrRawText"),
   importTextarea: document.getElementById("importTextarea"),
   importGradeSelect: document.getElementById("importGradeSelect"),
@@ -389,6 +411,7 @@ function bindEvents() {
         el.importLanguageSelect.value,
         DEFAULT_LANGUAGE
       );
+      syncImportOcrHint();
     });
   }
 
@@ -518,6 +541,7 @@ function applySettingsToControls() {
       state.settings.importLanguage
     );
   }
+  syncImportOcrHint();
   syncModeButtons();
   syncDirectionLabels();
   syncDirectionButtons();
@@ -774,11 +798,30 @@ function buildLanguageSelectOptions(select, languageValues, activeLanguage) {
   }
 }
 
+function syncImportOcrHint() {
+  if (!el.importOcrHint) {
+    return;
+  }
+  const languageCode = sanitizeLanguageCode(
+    el.importLanguageSelect?.value || state.settings.importLanguage,
+    DEFAULT_LANGUAGE
+  );
+  const isLatin = languageCode === "la";
+  el.importOcrHint.classList.toggle("hidden", !isLatin);
+  if (isLatin) {
+    el.importOcrHint.textContent = "Hinweis: Für Latein bitte CSV/JSON-Import nutzen (OCR folgt später).";
+  } else {
+    el.importOcrHint.textContent = "";
+  }
+}
+
 function buildQuestion(entry) {
   const prompt = state.settings.direction === "en-de" ? entry.foreign : entry.german;
   const answerDisplay = state.settings.direction === "en-de" ? entry.german : entry.foreign;
-  const allowOptionalGermanArticles = state.settings.direction === "en-de" && entry.language === "fr";
+  const allowOptionalGermanArticles =
+    state.settings.direction === "en-de" && (entry.language === "fr" || entry.language === "la");
   const allowGermanUmlautVariants = state.settings.direction === "en-de";
+  const allowLatinOrthographyVariants = state.settings.direction === "de-en" && entry.language === "la";
 
   return {
     entry,
@@ -786,7 +829,8 @@ function buildQuestion(entry) {
     answerDisplay,
     answerVariants: splitVariants(answerDisplay, {
       optionalGermanArticles: allowOptionalGermanArticles,
-      optionalGermanUmlautVariants: allowGermanUmlautVariants
+      optionalGermanUmlautVariants: allowGermanUmlautVariants,
+      optionalLatinOrthography: allowLatinOrthographyVariants
     })
   };
 }
