@@ -175,7 +175,13 @@ function normalizeHistoryForView(history) {
 
     const normalized = {
       date: typeof source.date === "string" ? source.date : new Date().toISOString(),
-      mode: source.mode === "learn" || source.mode === "quiz" || source.mode === "test" ? source.mode : "test",
+      mode:
+        source.mode === "learn" ||
+        source.mode === "quiz" ||
+        source.mode === "test" ||
+        source.mode === "conjugation"
+          ? source.mode
+          : "test",
       direction: typeof source.direction === "string" ? source.direction : "en-de",
       language: sanitizeLanguageCode(source.language, DEFAULT_LANGUAGE),
       unit: normalizeRunUnit(source.unit),
@@ -246,6 +252,10 @@ function formatRunDate(value) {
 }
 
 function formatDirectionLabel(run) {
+  if (run?.mode === "conjugation") {
+    const language = getLanguageDefinition(run?.language || DEFAULT_LANGUAGE);
+    return `Konjugation (${language.codeLabel})`;
+  }
   const direction = run?.direction === "de-en" ? "de-en" : "en-de";
   const language = getLanguageDefinition(run?.language || DEFAULT_LANGUAGE);
   if (direction === "de-en") {
@@ -256,7 +266,13 @@ function formatDirectionLabel(run) {
 
 function formatRunOptions(run) {
   const unit = run?.unit && run.unit !== "all" ? run.unit : "Alle Units";
-  const focus = run?.focus === "mistakes" ? "Fehlerfokus" : "Alle Vokabeln";
+  const focus = run?.focus === "mistakes"
+    ? run?.mode === "conjugation"
+      ? "Fehlerformen"
+      : "Fehlerfokus"
+    : run?.mode === "conjugation"
+      ? "Alle Verben"
+      : "Alle Vokabeln";
   const size = Math.max(1, Math.round(Number(run?.size) || Number(run?.total) || 15));
   return `Unit: ${unit} · Fokus: ${focus} · Fragen: ${size}`;
 }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isAnswerCorrect, splitDisplayVariants, splitVariants } from "../modules/common.js";
+import { isAnswerCorrect, labelMode, splitDisplayVariants, splitVariants } from "../modules/common.js";
 
 test("splitVariants can add article-free German variants when enabled", () => {
   const variants = splitVariants("der Hund", { optionalGermanArticles: true });
@@ -67,4 +67,8 @@ test("splitDisplayVariants keeps umlauts and original casing for UI labels", () 
   const variants = splitDisplayVariants("Möbel; Äpfel / Öl");
 
   assert.deepEqual(variants, ["Möbel", "Äpfel", "Öl"]);
+});
+
+test("labelMode supports conjugation mode", () => {
+  assert.equal(labelMode("conjugation"), "Konjugation");
 });

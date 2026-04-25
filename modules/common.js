@@ -99,6 +99,9 @@ export function labelMode(mode) {
   if (mode === "quiz") {
     return "Quiz";
   }
+  if (mode === "conjugation") {
+    return "Konjugation";
+  }
   return "Test";
 }
 

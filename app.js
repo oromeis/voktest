@@ -1,6 +1,7 @@
 import { BASE_VOCABULARY } from "./data/vocabulary.js";
 import { BASE_VOCABULARY_FR6 } from "./data/vocabulary-fr6.js";
 import { BASE_VOCABULARY_LA6 } from "./data/vocabulary-la6.js";
+import { BASE_CONJUGATIONS } from "./data/conjugations.js";
 import {
   DEFAULT_TARGET_MINUTES,
   computeRewardBonusPoints,
@@ -17,16 +18,20 @@ import {
   gradeFromPercent,
   isAnswerCorrect,
   labelMode,
+  normalize,
   shuffle,
   splitDisplayVariants,
   splitVariants
 } from "./modules/common.js";
 import {
+  CONJUGATION_PERSON_KEYS,
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
+  getConjugationLanguagesForGrade,
   createGradeOptions,
   getLanguageDefinition,
   getSupportedLanguages,
+  normalizeConjugationList,
   getLanguagesForGrade,
   normalizeVocabularyList,
   sanitizeLanguageCode,
@@ -37,11 +42,13 @@ const STORAGE_KEYS = {
   history: "voktest_history_v1",
   mistakes: "voktest_mistakes_v1",
   customVocabulary: "voktest_custom_v1",
+  customConjugations: "voktest_custom_conjugations_v1",
   settings: "voktest_settings_v1",
   admin: "voktest_admin_v1",
   weeklyGoal: "voktest_weekly_goal_v1"
 };
 
+const SUPPORTED_MODES = ["learn", "quiz", "test", "conjugation"];
 const DEFAULT_SETTINGS = {
   mode: "learn",
   direction: "en-de",
@@ -52,6 +59,7 @@ const DEFAULT_SETTINGS = {
   adminSection: "profiles",
   importLanguage: DEFAULT_LANGUAGE,
   importSchoolGrade: DEFAULT_SCHOOL_GRADE,
+  importType: "vocabulary",
   section: "start"
 };
 
@@ -64,8 +72,42 @@ const NORMALIZED_BASE_VOCABULARY = normalizeVocabularyList(
   idFallbackPrefix: "base"
 }
 );
+const NORMALIZED_BASE_CONJUGATIONS = normalizeConjugationList(
+  BASE_CONJUGATIONS,
+  {
+    fallbackLanguage: DEFAULT_LANGUAGE,
+    fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+    idFallbackPrefix: "base-conj"
+  }
+);
 
 const LEVEL_STEP_XP = 120;
+const CONJUGATION_PRONOUNS = {
+  en: {
+    "1sg": "I",
+    "2sg": "you",
+    "3sg": "he/she/it",
+    "1pl": "we",
+    "2pl": "you",
+    "3pl": "they"
+  },
+  fr: {
+    "1sg": "je",
+    "2sg": "tu",
+    "3sg": "il/elle/on",
+    "1pl": "nous",
+    "2pl": "vous",
+    "3pl": "ils/elles"
+  },
+  la: {
+    "1sg": "ego",
+    "2sg": "tu",
+    "3sg": "is/ea/id",
+    "1pl": "nos",
+    "2pl": "vos",
+    "3pl": "ei/eae/ea"
+  }
+};
 const LEVEL_TITLES = [
   "Wortstarter",
   "Satzbauer",
@@ -128,6 +170,7 @@ const ADMIN_SECTIONS = ["profiles", "new", "security"];
 
 const state = {
   customVocabulary: [],
+  customConjugations: [],
   history: [],
   mistakes: {},
   settings: { ...DEFAULT_SETTINGS },
@@ -177,6 +220,7 @@ const el = {
   adminSectionPanels: Array.from(document.querySelectorAll("[data-admin-section]")),
   modeButtons: Array.from(document.querySelectorAll("[data-mode]")),
   directionButtons: Array.from(document.querySelectorAll("[data-direction]")),
+  directionBlock: document.getElementById("directionBlock"),
   levelBadge: document.getElementById("levelBadge"),
   xpBadge: document.getElementById("xpBadge"),
   motivationLine: document.getElementById("motivationLine"),
@@ -221,6 +265,9 @@ const el = {
   importOcrHint: document.getElementById("importOcrHint"),
   ocrRawText: document.getElementById("ocrRawText"),
   importTextarea: document.getElementById("importTextarea"),
+  importTypeSelect: document.getElementById("importTypeSelect"),
+  importFormatHint: document.getElementById("importFormatHint"),
+  ocrControls: document.getElementById("ocrControls"),
   importGradeSelect: document.getElementById("importGradeSelect"),
   importLanguageSelect: document.getElementById("importLanguageSelect"),
   importBtn: document.getElementById("importBtn"),
@@ -278,11 +325,18 @@ const importModule = createImportModule({
     importFeedback: el.importFeedback
   },
   persistCustomVocabulary: () => save(STORAGE_KEYS.customVocabulary, state.customVocabulary),
+  persistCustomConjugations: () => save(STORAGE_KEYS.customConjugations, state.customConjugations),
   getImportContext: () => ({
     schoolGrade: sanitizeSchoolGrade(state.settings.importSchoolGrade, DEFAULT_SCHOOL_GRADE),
     language: sanitizeLanguageCode(state.settings.importLanguage, DEFAULT_LANGUAGE)
   }),
+  getImportType: () => state.settings.importType,
   onVocabularyChanged: () => {
+    syncLanguageOptions();
+    refreshUnitFilters();
+    renderIdleState();
+  },
+  onConjugationChanged: () => {
     syncLanguageOptions();
     refreshUnitFilters();
     renderIdleState();
@@ -355,9 +409,11 @@ function bindEvents() {
 
   el.modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      state.settings.mode = button.dataset.mode;
+      state.settings.mode = sanitizeMode(button.dataset.mode);
       save(STORAGE_KEYS.settings, state.settings);
       syncModeButtons();
+      syncDirectionVisibility();
+      refreshUnitFilters();
       renderIdleState();
     });
   });
@@ -412,6 +468,13 @@ function bindEvents() {
         DEFAULT_LANGUAGE
       );
       syncImportOcrHint();
+    });
+  }
+  if (el.importTypeSelect) {
+    el.importTypeSelect.addEventListener("change", () => {
+      state.settings.importType = sanitizeImportType(el.importTypeSelect.value);
+      save(STORAGE_KEYS.settings, state.settings);
+      syncImportModeUI();
     });
   }
 
@@ -520,11 +583,16 @@ function bindSectionNavigation() {
 }
 
 function applySettingsToControls() {
+  state.settings.mode = sanitizeMode(state.settings.mode);
+  state.settings.importType = sanitizeImportType(state.settings.importType);
   syncLanguageOptions();
   syncAdminGradeSelectOptions();
   syncAdminSectionView();
   el.sizeSelect.value = String(state.settings.size);
   el.focusSelect.value = state.settings.focus;
+  if (el.importTypeSelect) {
+    el.importTypeSelect.value = state.settings.importType;
+  }
   if (el.importGradeSelect) {
     buildSelectOptions(
       el.importGradeSelect,
@@ -542,9 +610,11 @@ function applySettingsToControls() {
     );
   }
   syncImportOcrHint();
+  syncImportModeUI();
   syncModeButtons();
   syncDirectionLabels();
   syncDirectionButtons();
+  syncDirectionVisibility();
   updateHeaderContextBadge();
 }
 
@@ -567,6 +637,14 @@ function syncAdminGradeSelectOptions() {
 
 function sanitizeAdminSection(value) {
   return ADMIN_SECTIONS.includes(value) ? value : "profiles";
+}
+
+function sanitizeMode(value) {
+  return SUPPORTED_MODES.includes(value) ? value : "learn";
+}
+
+function sanitizeImportType(value) {
+  return value === "conjugation" ? "conjugation" : "vocabulary";
 }
 
 function syncAdminSectionView() {
@@ -628,6 +706,51 @@ function syncDirectionButtons() {
   });
 }
 
+function syncDirectionVisibility() {
+  const isConjugation = state.settings.mode === "conjugation";
+  if (el.directionBlock) {
+    el.directionBlock.classList.toggle("hidden", isConjugation);
+  }
+}
+
+function syncImportModeUI() {
+  const importType = sanitizeImportType(state.settings.importType);
+  state.settings.importType = importType;
+  const isConjugation = importType === "conjugation";
+
+  if (el.ocrControls) {
+    el.ocrControls.classList.toggle("hidden", isConjugation);
+  }
+  if (el.importFormatHint) {
+    if (isConjugation) {
+      el.importFormatHint.innerHTML = [
+        "Format 1: JSON-Array mit Feldern",
+        "<code>lemma</code>, <code>german</code>, <code>unit</code>, <code>tense</code>,",
+        "<code>forms.1sg</code> ... <code>forms.3pl</code>,",
+        "<code>language</code>, <code>schoolGrade</code>.",
+        "<br />",
+        "Format 2 (CSV):",
+        "<code>lemma;german;unit;tense;1sg;2sg;3sg;1pl;2pl;3pl;language;schoolGrade</code>",
+        "<br />",
+        "Hinweis: OCR ist in v1 nur für Vokabelimport aktiv."
+      ].join(" ");
+      el.importTextarea.placeholder = "amare;lieben;Unit 1;present;amo;amas;amat;amamus;amatis;amant;la;6";
+    } else {
+      el.importFormatHint.innerHTML = [
+        "Format 1: JSON-Array mit Feldern <code>foreign</code>/<code>english</code> und",
+        "<code>german</code>.",
+        "<br />",
+        "Format 2 (empfohlen): CSV: <code>foreign;german;unit;page</code>",
+        "<br />",
+        "Kompatibel bleiben auch ältere 5-/6-Spalten-Zeilen:",
+        "<code>foreign;german;unit;lesson;page;topic;language;schoolGrade</code>"
+      ].join(" ");
+      el.importTextarea.placeholder = "to run;joggen;Unit 4;249";
+    }
+  }
+  syncImportOcrHint();
+}
+
 function getAllVocabulary() {
   const normalizedCustom = normalizeVocabularyList(state.customVocabulary, {
     fallbackLanguage: DEFAULT_LANGUAGE,
@@ -635,6 +758,15 @@ function getAllVocabulary() {
     idFallbackPrefix: "custom"
   });
   return [...NORMALIZED_BASE_VOCABULARY, ...normalizedCustom];
+}
+
+function getAllConjugations() {
+  const normalizedCustom = normalizeConjugationList(state.customConjugations, {
+    fallbackLanguage: DEFAULT_LANGUAGE,
+    fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+    idFallbackPrefix: "custom-conj"
+  });
+  return [...NORMALIZED_BASE_CONJUGATIONS, ...normalizedCustom];
 }
 
 function getCurrentUserSchoolGrade() {
@@ -645,7 +777,11 @@ function getAvailableLanguagesForCurrentGrade() {
   if (state.auth.role !== "student") {
     return [];
   }
-  return getLanguagesForGrade(getAllVocabulary(), getCurrentUserSchoolGrade());
+  const schoolGrade = getCurrentUserSchoolGrade();
+  const fromVocabulary = getLanguagesForGrade(getAllVocabulary(), schoolGrade);
+  const fromConjugations = getConjugationLanguagesForGrade(getAllConjugations(), schoolGrade);
+  return [...new Set([...fromVocabulary, ...fromConjugations])]
+    .sort((left, right) => left.localeCompare(right, "de"));
 }
 
 function getAdminImportLanguageValues() {
@@ -734,6 +870,18 @@ function getVocabularyForCurrentSelection() {
   );
 }
 
+function getConjugationsForCurrentSelection() {
+  const schoolGrade = getCurrentUserSchoolGrade();
+  const languageCode = getActiveLanguageCode();
+  if (state.auth.role !== "student" || !languageCode) {
+    return [];
+  }
+
+  return getAllConjugations().filter(
+    (entry) => entry.schoolGrade === schoolGrade && entry.language === languageCode
+  );
+}
+
 function getEntryUnit(entry) {
   const rawUnit = entry?.unit;
   const unit = typeof rawUnit === "string" ? rawUnit.trim() : "";
@@ -741,9 +889,12 @@ function getEntryUnit(entry) {
 }
 
 function refreshUnitFilters() {
+  const sourceEntries = state.settings.mode === "conjugation"
+    ? getConjugationsForCurrentSelection()
+    : getVocabularyForCurrentSelection();
   const units = [
     ...new Set(
-      getVocabularyForCurrentSelection()
+      sourceEntries
         .filter(Boolean)
         .map((entry) => getEntryUnit(entry))
     )
@@ -802,6 +953,11 @@ function syncImportOcrHint() {
   if (!el.importOcrHint) {
     return;
   }
+  if (sanitizeImportType(state.settings.importType) === "conjugation") {
+    el.importOcrHint.classList.remove("hidden");
+    el.importOcrHint.textContent = "Konjugation: Bitte CSV/JSON-Import nutzen (kein OCR in v1).";
+    return;
+  }
   const languageCode = sanitizeLanguageCode(
     el.importLanguageSelect?.value || state.settings.importLanguage,
     DEFAULT_LANGUAGE
@@ -815,7 +971,7 @@ function syncImportOcrHint() {
   }
 }
 
-function buildQuestion(entry) {
+function buildVocabularyQuestion(entry) {
   const prompt = state.settings.direction === "en-de" ? entry.foreign : entry.german;
   const answerDisplay = state.settings.direction === "en-de" ? entry.german : entry.foreign;
   const allowOptionalGermanArticles =
@@ -835,7 +991,31 @@ function buildQuestion(entry) {
   };
 }
 
+function getConjugationPronoun(languageCode, personKey) {
+  const pronouns = CONJUGATION_PRONOUNS[languageCode] || CONJUGATION_PRONOUNS.en;
+  return pronouns[personKey] || personKey;
+}
+
+function createConjugationQuestion(entry, personKey, responseType) {
+  const answerDisplay = entry.forms[personKey];
+  return {
+    entry,
+    prompt: `Konjugiere: ${getConjugationPronoun(entry.language, personKey)} + ${entry.lemma} (${entry.german})`,
+    answerDisplay,
+    answerVariants: splitVariants(answerDisplay, {
+      optionalLatinOrthography: entry.language === "la"
+    }),
+    personKey,
+    responseType,
+    mistakeId: `${entry.id}|${personKey}`
+  };
+}
+
 function getQuestionDirectionLabel() {
+  if (state.settings.mode === "conjugation") {
+    const language = getLanguageDefinition(getActiveLanguageCode() || DEFAULT_LANGUAGE);
+    return `Konjugiere (${language.codeLabel}) im Präsens`;
+  }
   if (state.settings.direction === "en-de") {
     return "Übersetze ins Deutsche";
   }
@@ -843,7 +1023,7 @@ function getQuestionDirectionLabel() {
   return `Übersetze ins ${language.nominalized}`;
 }
 
-function getPool(focusMode) {
+function getVocabularyPool(focusMode) {
   const all = getVocabularyForCurrentSelection();
   let pool = all.filter((entry) => {
     if (!entry) {
@@ -868,6 +1048,52 @@ function getPool(focusMode) {
   return pool;
 }
 
+function getConjugationPool() {
+  return getConjugationsForCurrentSelection().filter((entry) => {
+    if (!entry) {
+      return false;
+    }
+    if (state.settings.unit !== "all" && getEntryUnit(entry) !== state.settings.unit) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function createConjugationQuestionSet(focusMode, size) {
+  const pool = getConjugationPool();
+  if (!pool.length) {
+    return [];
+  }
+
+  const allSpecs = pool.flatMap((entry) =>
+    CONJUGATION_PERSON_KEYS.map((personKey) => ({
+      entry,
+      personKey,
+      id: `${entry.id}|${personKey}`,
+      mistakes: Math.max(0, Number(state.mistakes[`${entry.id}|${personKey}`]) || 0)
+    }))
+  );
+
+  let selectedSpecs = allSpecs;
+  if (focusMode === "mistakes") {
+    selectedSpecs = allSpecs
+      .filter((item) => item.mistakes > 0)
+      .sort((left, right) => right.mistakes - left.mistakes);
+  } else {
+    selectedSpecs = shuffle([...allSpecs]);
+  }
+
+  const maxSize = Math.min(size, selectedSpecs.length);
+  return selectedSpecs.slice(0, maxSize).map((spec, index) =>
+    createConjugationQuestion(
+      spec.entry,
+      spec.personKey,
+      index % 2 === 0 ? "text" : "mc"
+    )
+  );
+}
+
 function startSession(focusMode = "all") {
   if (state.auth.role !== "student") {
     setFeedback("Lernrunden sind nur im Schülermodus verfügbar.", false);
@@ -886,10 +1112,32 @@ function startSession(focusMode = "all") {
     return;
   }
   ensureCurrentWeeklyGoal();
-  const pool = getPool(focusMode);
-  if (pool.length === 0) {
+  const activeLanguage = getActiveLanguageCode() || DEFAULT_LANGUAGE;
+  const activeDirection = state.settings.direction === "de-en" ? "de-en" : "en-de";
+  const activeMode = sanitizeMode(state.settings.mode);
+  const size = Math.max(1, Math.round(Number(state.settings.size) || 15));
+
+  let questions = [];
+  if (activeMode === "conjugation") {
+    questions = createConjugationQuestionSet(focusMode, size);
+  } else {
+    const pool = getVocabularyPool(focusMode);
+    if (!pool.length) {
+      setFeedback(
+        "Keine passenden Vokabeln gefunden. Prüfe Sprache, Unit-Filter oder importiere neue Daten.",
+        false
+      );
+      return;
+    }
+    const selectedEntries = shuffle([...pool]).slice(0, Math.min(size, pool.length));
+    questions = selectedEntries.map((entry) => buildVocabularyQuestion(entry));
+  }
+
+  if (questions.length === 0) {
     setFeedback(
-      "Keine passenden Vokabeln gefunden. Prüfe Sprache, Unit-Filter oder importiere neue Daten.",
+      activeMode === "conjugation"
+        ? "Keine passenden Konjugationen gefunden. Prüfe Sprache, Unit-Filter oder importiere Daten."
+        : "Keine passenden Vokabeln gefunden. Prüfe Sprache, Unit-Filter oder importiere Daten.",
       false
     );
     return;
@@ -897,18 +1145,12 @@ function startSession(focusMode = "all") {
 
   setActiveSection("play");
 
-  const size = Math.min(state.settings.size, pool.length);
-  const activeLanguage = getActiveLanguageCode() || DEFAULT_LANGUAGE;
-  const activeDirection = state.settings.direction === "de-en" ? "de-en" : "en-de";
-  const selectedEntries = shuffle([...pool]).slice(0, size);
-  const questions = selectedEntries.map((entry) => buildQuestion(entry));
-
   state.session = {
-    mode: state.settings.mode,
-    direction: activeDirection,
+    mode: activeMode,
+    direction: activeMode === "conjugation" ? "conjugation" : activeDirection,
     language: sanitizeLanguageCode(activeLanguage, DEFAULT_LANGUAGE),
     unit: state.settings.unit,
-    size,
+    size: questions.length,
     focus: focusMode,
     questions,
     index: 0,
@@ -967,7 +1209,7 @@ function renderQuestion() {
     return;
   }
 
-  if (session.mode === "quiz") {
+  if (session.mode === "quiz" || question.responseType === "mc") {
     renderMultipleChoice(question);
     return;
   }
@@ -977,14 +1219,19 @@ function renderQuestion() {
 }
 
 function renderMultipleChoice(question) {
-  const all = getPool("all");
-  const wrongChoices = shuffle(
-    all
-      .filter((entry) => entry.id !== question.entry.id)
-      .map((entry) => (state.settings.direction === "en-de" ? entry.german : entry.foreign))
-  )
-    .slice(0, 3)
-    .map((choice) => splitDisplayVariants(choice)[0]);
+  let wrongChoices = [];
+  if (state.session?.mode === "conjugation") {
+    wrongChoices = getConjugationDistractors(question);
+  } else {
+    const all = getVocabularyPool("all");
+    wrongChoices = shuffle(
+      all
+        .filter((entry) => entry.id !== question.entry.id)
+        .map((entry) => (state.settings.direction === "en-de" ? entry.german : entry.foreign))
+    )
+      .slice(0, 3)
+      .map((choice) => splitDisplayVariants(choice)[0]);
+  }
 
   const options = shuffle([splitDisplayVariants(question.answerDisplay)[0], ...wrongChoices]);
 
@@ -1016,6 +1263,38 @@ function renderMultipleChoice(question) {
   });
 }
 
+function getConjugationDistractors(question) {
+  const personKey = question?.personKey;
+  const answer = splitDisplayVariants(question?.answerDisplay || "")[0] || "";
+  const answerNormalized = normalize(answer);
+  if (!personKey) {
+    return [];
+  }
+
+  const pool = getConjugationPool();
+  const candidates = pool
+    .map((entry) => entry?.forms?.[personKey] || "")
+    .map((value) => splitDisplayVariants(value)[0] || "")
+    .filter(Boolean)
+    .filter((value) => normalize(value) !== answerNormalized);
+
+  const unique = [];
+  const seen = new Set();
+  for (const value of shuffle(candidates)) {
+    const normalized = normalize(value);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    unique.push(value);
+    if (unique.length >= 3) {
+      break;
+    }
+  }
+
+  return unique;
+}
+
 function submitQuestion(isCorrect, userAnswer) {
   const session = state.session;
   const question = getCurrentQuestion();
@@ -1039,7 +1318,8 @@ function submitQuestion(isCorrect, userAnswer) {
       expected: question.answerDisplay,
       answer: userAnswer
     });
-    state.mistakes[question.entry.id] = (state.mistakes[question.entry.id] || 0) + 1;
+    const mistakeId = question.mistakeId || question.entry.id;
+    state.mistakes[mistakeId] = (state.mistakes[mistakeId] || 0) + 1;
     save(STORAGE_KEYS.mistakes, state.mistakes);
     setFeedback(`Nicht ganz. Richtig wäre: ${question.answerDisplay}`, false);
     showBigFeedback("Fast! Weiter geht's.", false);
@@ -1058,7 +1338,7 @@ function submitQuestion(isCorrect, userAnswer) {
       return;
     }
     renderQuestion();
-  }, session.mode === "test" ? 450 : 320);
+  }, session.mode === "test" || question.responseType === "text" ? 450 : 320);
 }
 
 function finishSession() {
@@ -1191,7 +1471,8 @@ function normalizeHistoryEntries() {
   let changed = false;
   state.history = state.history.map((entry) => {
     const safe = { ...(entry || {}) };
-    const fallbackDirection = safe.direction === "de-en" ? "de-en" : "en-de";
+    const fallbackDirection =
+      safe.direction === "de-en" || safe.direction === "conjugation" ? safe.direction : "en-de";
     const total = Math.max(0, Number(safe.total) || 0);
     const normalizedSize = Math.max(
       1,
@@ -1203,6 +1484,7 @@ function normalizeHistoryEntries() {
     const next = {
       ...safe,
       direction: fallbackDirection,
+      mode: sanitizeMode(safe.mode),
       language: sanitizeLanguageCode(safe.language, DEFAULT_LANGUAGE),
       unit: normalizedUnit,
       focus: safe.focus === "mistakes" ? "mistakes" : "all",
@@ -1223,6 +1505,7 @@ function normalizeHistoryEntries() {
 
     if (
       next.direction !== safe.direction ||
+      next.mode !== safe.mode ||
       next.language !== safe.language ||
       next.unit !== safe.unit ||
       next.focus !== safe.focus ||
@@ -1861,7 +2144,7 @@ function renderAdminProfileHistory() {
 
     const details = document.createElement("p");
     details.className = "recent-sub";
-    details.textContent = `Richtung: ${formatAdminHistoryDirection(run.direction, run.language)} · Punkte: ${Math.max(
+    details.textContent = `Richtung: ${formatAdminHistoryDirection(run.direction, run.language, run.mode)} · Punkte: ${Math.max(
       0,
       Number(run.points) || 0
     )} · Zeit: ${formatRunDuration(run.durationSeconds)}`;
@@ -1936,8 +2219,11 @@ function normalizeAdminHistoryRun(entry) {
 
   return {
     date: typeof source.date === "string" ? source.date : "",
-    mode: source.mode === "learn" || source.mode === "quiz" || source.mode === "test" ? source.mode : "test",
-    direction: source.direction === "de-en" ? "de-en" : "en-de",
+    mode: sanitizeMode(source.mode),
+    direction:
+      source.direction === "de-en" || source.direction === "conjugation"
+        ? source.direction
+        : "en-de",
     language: sanitizeLanguageCode(source.language, DEFAULT_LANGUAGE),
     unit: typeof source.unit === "string" && source.unit.trim() ? source.unit.trim().slice(0, 80) : "all",
     focus: source.focus === "mistakes" ? "mistakes" : "all",
@@ -1962,7 +2248,10 @@ function save(key, value) {
     scheduleServerPush();
     return;
   }
-  if (state.auth.role === "admin" && key === STORAGE_KEYS.customVocabulary) {
+  if (
+    state.auth.role === "admin" &&
+    (key === STORAGE_KEYS.customVocabulary || key === STORAGE_KEYS.customConjugations)
+  ) {
     remoteSync.pendingSharedPush = true;
     scheduleServerPush();
   }
@@ -1970,6 +2259,7 @@ function save(key, value) {
 
 function resetStateForLoggedOut() {
   state.customVocabulary = [];
+  state.customConjugations = [];
   state.history = [];
   state.mistakes = {};
   state.settings = { ...DEFAULT_SETTINGS };
@@ -2256,6 +2546,11 @@ async function loadStateForRole() {
       fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
       idFallbackPrefix: "custom"
     });
+    state.customConjugations = normalizeConjugationList(shared.customConjugations, {
+      fallbackLanguage: DEFAULT_LANGUAGE,
+      fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+      idFallbackPrefix: "custom-conj"
+    });
     state.adminConfig = { ...DEFAULT_ADMIN_CONFIG, ...(shared.admin || {}) };
     await refreshAdminProfiles();
   }
@@ -2292,14 +2587,26 @@ function applyStudentState(serverState) {
       idFallbackPrefix: "custom"
     });
   }
+  if (has(STORAGE_KEYS.customConjugations)) {
+    state.customConjugations = normalizeConjugationList(
+      serverState[STORAGE_KEYS.customConjugations],
+      {
+        fallbackLanguage: DEFAULT_LANGUAGE,
+        fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+        idFallbackPrefix: "custom-conj"
+      }
+    );
+  }
   if (has(STORAGE_KEYS.settings)) {
     state.settings = { ...DEFAULT_SETTINGS, ...(serverState[STORAGE_KEYS.settings] || {}) };
+    state.settings.mode = sanitizeMode(state.settings.mode);
     state.settings.language = sanitizeLanguageCode(state.settings.language, DEFAULT_LANGUAGE);
     state.settings.adminSection = sanitizeAdminSection(state.settings.adminSection);
     state.settings.importLanguage = sanitizeLanguageCode(
       state.settings.importLanguage,
       DEFAULT_LANGUAGE
     );
+    state.settings.importType = sanitizeImportType(state.settings.importType);
     state.settings.importSchoolGrade = sanitizeSchoolGrade(
       state.settings.importSchoolGrade,
       DEFAULT_SCHOOL_GRADE
@@ -2531,7 +2838,8 @@ function buildMeStatePayload() {
 
 function buildSharedPayload() {
   return {
-    [STORAGE_KEYS.customVocabulary]: state.customVocabulary
+    [STORAGE_KEYS.customVocabulary]: state.customVocabulary,
+    [STORAGE_KEYS.customConjugations]: state.customConjugations
   };
 }
 
@@ -2736,8 +3044,11 @@ function formatRunDuration(valueSeconds) {
   return `${hours} h ${minutes} min`;
 }
 
-function formatAdminHistoryDirection(direction, languageCode) {
+function formatAdminHistoryDirection(direction, languageCode, mode) {
   const language = getLanguageDefinition(sanitizeLanguageCode(languageCode, DEFAULT_LANGUAGE));
+  if (mode === "conjugation" || direction === "conjugation") {
+    return `Konjugation (${language.codeLabel})`;
+  }
   if (direction === "de-en") {
     return `DE -> ${language.codeLabel}`;
   }
@@ -2747,7 +3058,13 @@ function formatAdminHistoryDirection(direction, languageCode) {
 function formatAdminHistoryOptions(entry) {
   const unitValue = typeof entry?.unit === "string" ? entry.unit.trim() : "";
   const unit = unitValue && unitValue !== "all" ? unitValue : "Alle Units";
-  const focus = entry?.focus === "mistakes" ? "Fehlerfokus" : "Alle Vokabeln";
+  const focus = entry?.focus === "mistakes"
+    ? entry?.mode === "conjugation"
+      ? "Fehlerformen"
+      : "Fehlerfokus"
+    : entry?.mode === "conjugation"
+      ? "Alle Verben"
+      : "Alle Vokabeln";
   const size = Math.max(1, Math.round(Number(entry?.size) || Number(entry?.total) || 15));
   return `Unit: ${unit} · Fokus: ${focus} · Fragen: ${size}`;
 }

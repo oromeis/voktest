@@ -1,7 +1,10 @@
 import { normalize } from "./common.js";
 import {
+  CONJUGATION_PERSON_KEYS,
+  DEFAULT_CONJUGATION_TENSE,
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
+  normalizeConjugationEntry,
   normalizeVocabularyEntry,
   sanitizeLanguageCode,
   sanitizeSchoolGrade
@@ -14,7 +17,10 @@ export function createImportModule({
   state,
   elements,
   persistCustomVocabulary,
+  persistCustomConjugations,
   onVocabularyChanged,
+  onConjugationChanged,
+  getImportType,
   getImportContext
 }) {
   let tesseractLoadPromise = null;
@@ -38,6 +44,10 @@ export function createImportModule({
     }
 
     const importContext = resolveImportContext();
+    if (isConjugationImport()) {
+      setOcrFeedback("OCR ist in v1 nur für Vokabelimport aktiv (nicht für Konjugation).", false);
+      return;
+    }
     if (importContext.language === "la") {
       setOcrFeedback("Für Latein bitte CSV/JSON-Import nutzen (OCR folgt später).", true);
       return;
@@ -263,32 +273,65 @@ export function createImportModule({
 
     try {
       const importContext = resolveImportContext();
-      const parsed = raw.startsWith("[")
-        ? parseJson(raw, importContext)
-        : parseCsv(raw, importContext);
+      const importType = getImportTypeSafe();
+      const parsed = importType === "conjugation"
+        ? raw.startsWith("[")
+          ? parseConjugationJson(raw, importContext)
+          : parseConjugationCsv(raw, importContext)
+        : raw.startsWith("[")
+          ? parseVocabularyJson(raw, importContext)
+          : parseVocabularyCsv(raw, importContext);
       if (parsed.length === 0) {
         setImportFeedback("Keine gültigen Datensätze erkannt.", false);
         return;
       }
 
-      state.customVocabulary = [...state.customVocabulary, ...parsed];
-      persistCustomVocabulary();
+      if (importType === "conjugation") {
+        state.customConjugations = [...state.customConjugations, ...parsed];
+        if (typeof persistCustomConjugations === "function") {
+          persistCustomConjugations();
+        }
+        if (typeof onConjugationChanged === "function") {
+          onConjugationChanged();
+        }
+      } else {
+        state.customVocabulary = [...state.customVocabulary, ...parsed];
+        persistCustomVocabulary();
+        onVocabularyChanged();
+      }
       elements.importTextarea.value = "";
-      onVocabularyChanged();
-      setImportFeedback(`${parsed.length} Vokabeln importiert.`, true);
+      setImportFeedback(
+        importType === "conjugation"
+          ? `${parsed.length} Konjugationen importiert.`
+          : `${parsed.length} Vokabeln importiert.`,
+        true
+      );
     } catch (error) {
       setImportFeedback(`Importfehler: ${error.message}`, false);
     }
   }
 
   function resetCustomVocabulary() {
+    const importType = getImportTypeSafe();
+    if (importType === "conjugation") {
+      state.customConjugations = [];
+      if (typeof persistCustomConjugations === "function") {
+        persistCustomConjugations();
+      }
+      if (typeof onConjugationChanged === "function") {
+        onConjugationChanged();
+      }
+      setImportFeedback("Eigene Konjugationsimporte wurden entfernt. Starterdaten bleiben erhalten.", true);
+      return;
+    }
+
     state.customVocabulary = [];
     persistCustomVocabulary();
     onVocabularyChanged();
-    setImportFeedback("Eigene Importe wurden entfernt. Buchdaten bleiben erhalten.", true);
+    setImportFeedback("Eigene Vokabelimporte wurden entfernt. Starterdaten bleiben erhalten.", true);
   }
 
-  function parseJson(raw, importContext) {
+  function parseVocabularyJson(raw, importContext) {
     const data = JSON.parse(raw);
     if (!Array.isArray(data)) {
       throw new Error("JSON muss ein Array sein.");
@@ -300,7 +343,7 @@ export function createImportModule({
       .filter(Boolean);
   }
 
-  function parseCsv(raw, importContext) {
+  function parseVocabularyCsv(raw, importContext) {
     const lines = raw
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -353,6 +396,72 @@ export function createImportModule({
       .filter(Boolean);
   }
 
+  function parseConjugationJson(raw, importContext) {
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) {
+      throw new Error("JSON muss ein Array sein.");
+    }
+
+    const stamp = Date.now();
+    return data
+      .map((item, index) => toConjugationEntry(item, `json-conj-${stamp}-${index}`, importContext))
+      .filter(Boolean);
+  }
+
+  function parseConjugationCsv(raw, importContext) {
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const stamp = Date.now();
+    return lines
+      .map((line, index) => {
+        const fields = line.split(";").map((part) => part.trim());
+        const first = String(fields[0] || "").toLowerCase();
+        const second = String(fields[1] || "").toLowerCase();
+        if (index === 0 && /^lemma\b/.test(first) && /^(german|deutsch)\b/.test(second)) {
+          return null;
+        }
+        const [
+          lemma,
+          german,
+          unit,
+          tense,
+          form1sg,
+          form2sg,
+          form3sg,
+          form1pl,
+          form2pl,
+          form3pl,
+          language,
+          schoolGrade
+        ] = fields;
+
+        return toConjugationEntry(
+          {
+            lemma,
+            german,
+            unit,
+            tense,
+            language,
+            schoolGrade,
+            forms: {
+              "1sg": form1sg,
+              "2sg": form2sg,
+              "3sg": form3sg,
+              "1pl": form1pl,
+              "2pl": form2pl,
+              "3pl": form3pl
+            }
+          },
+          `csv-conj-${stamp}-${index}`,
+          importContext
+        );
+      })
+      .filter(Boolean);
+  }
+
   function toEntry(item, id, importContext) {
     const normalized = normalizeVocabularyEntry(
       {
@@ -380,12 +489,49 @@ export function createImportModule({
     };
   }
 
+  function toConjugationEntry(item, id, importContext) {
+    const normalized = normalizeConjugationEntry(
+      {
+        ...item,
+        id,
+        language: item?.language || importContext.language,
+        schoolGrade: item?.schoolGrade || importContext.schoolGrade,
+        tense: item?.tense || DEFAULT_CONJUGATION_TENSE,
+        forms: {
+          ...item?.forms,
+          ...(Object.fromEntries(
+            CONJUGATION_PERSON_KEYS.map((key) => [key, item?.[key]])
+          ))
+        }
+      },
+      {
+        fallbackLanguage: importContext.language,
+        fallbackSchoolGrade: importContext.schoolGrade,
+        idFallbackPrefix: "import-conj"
+      }
+    );
+    if (!normalized) {
+      return null;
+    }
+
+    return {
+      ...normalized,
+      unit: String(normalized.unit || "Konjugation Import").trim(),
+      tense: DEFAULT_CONJUGATION_TENSE
+    };
+  }
+
   function resolveImportContext() {
     const rawContext = typeof getImportContext === "function" ? getImportContext() : {};
     return {
       language: sanitizeLanguageCode(rawContext?.language, DEFAULT_LANGUAGE),
       schoolGrade: sanitizeSchoolGrade(rawContext?.schoolGrade, DEFAULT_SCHOOL_GRADE)
     };
+  }
+
+  function getImportTypeSafe() {
+    const value = typeof getImportType === "function" ? getImportType() : "vocabulary";
+    return value === "conjugation" ? "conjugation" : "vocabulary";
   }
 
   function setImportFeedback(text, ok) {

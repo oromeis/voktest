@@ -1,4 +1,4 @@
-const CACHE_NAME = "voktest-v25";
+const CACHE_NAME = "voktest-v26";
 const ASSETS = [
   "./",
   "./index.html",
@@ -12,6 +12,7 @@ const ASSETS = [
   "./data/vocabulary.js",
   "./data/vocabulary-fr6.js",
   "./data/vocabulary-la6.js",
+  "./data/conjugations.js",
   "./assets/language-king-banner.png",
   "./manifest.webmanifest",
   "./icons/icon.svg"

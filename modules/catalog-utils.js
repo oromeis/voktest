@@ -2,6 +2,8 @@ export const MIN_SCHOOL_GRADE = 5;
 export const MAX_SCHOOL_GRADE = 13;
 export const DEFAULT_SCHOOL_GRADE = 6;
 export const DEFAULT_LANGUAGE = "en";
+export const DEFAULT_CONJUGATION_TENSE = "present";
+export const CONJUGATION_PERSON_KEYS = ["1sg", "2sg", "3sg", "1pl", "2pl", "3pl"];
 
 export const LANGUAGE_DEFINITIONS = {
   en: {
@@ -129,10 +131,83 @@ export function normalizeVocabularyList(list, options = {}) {
     .filter(Boolean);
 }
 
+export function normalizeConjugationEntry(value, options = {}) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const lemmaRaw = typeof value.lemma === "string" ? value.lemma : "";
+  const germanRaw = typeof value.german === "string" ? value.german : "";
+  const lemma = lemmaRaw.trim();
+  const german = germanRaw.trim();
+  if (!lemma || !german) {
+    return null;
+  }
+
+  const fallbackLanguage = sanitizeLanguageCode(options.fallbackLanguage, DEFAULT_LANGUAGE);
+  const fallbackSchoolGrade = sanitizeSchoolGrade(
+    options.fallbackSchoolGrade,
+    DEFAULT_SCHOOL_GRADE
+  );
+  const idFallbackPrefix = typeof options.idFallbackPrefix === "string" && options.idFallbackPrefix
+    ? options.idFallbackPrefix
+    : "conj";
+
+  const id = typeof value.id === "string" && value.id.trim()
+    ? value.id.trim().slice(0, 120)
+    : `${idFallbackPrefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const language = sanitizeLanguageCode(value.language, fallbackLanguage);
+  const schoolGrade = sanitizeSchoolGrade(value.schoolGrade, fallbackSchoolGrade);
+  const tense = sanitizeConjugationTense(value.tense, DEFAULT_CONJUGATION_TENSE);
+  const unit = sanitizeText(value.unit, "", 80);
+
+  const formsSource = value.forms && typeof value.forms === "object" ? value.forms : value;
+  const forms = {};
+  for (const key of CONJUGATION_PERSON_KEYS) {
+    const form = sanitizeText(formsSource[key], "", 120);
+    if (!form) {
+      return null;
+    }
+    forms[key] = form;
+  }
+
+  return {
+    id,
+    language,
+    schoolGrade,
+    unit,
+    lemma: lemma.slice(0, 140),
+    german: german.slice(0, 240),
+    tense,
+    forms
+  };
+}
+
+export function normalizeConjugationList(list, options = {}) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list
+    .map((entry) => normalizeConjugationEntry(entry, options))
+    .filter(Boolean);
+}
+
 export function getLanguagesForGrade(entries, schoolGrade) {
   const grade = sanitizeSchoolGrade(schoolGrade, DEFAULT_SCHOOL_GRADE);
   const languages = new Set();
   normalizeVocabularyList(entries).forEach((entry) => {
+    if (entry.schoolGrade === grade) {
+      languages.add(entry.language);
+    }
+  });
+  return [...languages].sort((left, right) => left.localeCompare(right, "de"));
+}
+
+export function getConjugationLanguagesForGrade(entries, schoolGrade) {
+  const grade = sanitizeSchoolGrade(schoolGrade, DEFAULT_SCHOOL_GRADE);
+  const languages = new Set();
+  normalizeConjugationList(entries).forEach((entry) => {
     if (entry.schoolGrade === grade) {
       languages.add(entry.language);
     }
@@ -167,6 +242,14 @@ function sanitizePage(value) {
     return trimmed.slice(0, 50);
   }
   return "";
+}
+
+function sanitizeConjugationTense(value, fallback = DEFAULT_CONJUGATION_TENSE) {
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (text === "present") {
+    return "present";
+  }
+  return fallback;
 }
 
 function clampGrade(value) {

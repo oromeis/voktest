@@ -1,10 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  CONJUGATION_PERSON_KEYS,
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
+  getConjugationLanguagesForGrade,
   getLanguageDefinition,
   getLanguagesForGrade,
+  normalizeConjugationEntry,
   normalizeVocabularyEntry,
   sanitizeLanguageCode,
   sanitizeSchoolGrade
@@ -60,4 +63,71 @@ test("getLanguagesForGrade returns unique language codes for given grade", () =>
   assert.deepEqual(getLanguagesForGrade(entries, 6), ["en", "fr", "la"]);
   assert.deepEqual(getLanguagesForGrade(entries, 7), ["fr"]);
   assert.deepEqual(getLanguagesForGrade(entries, 8), []);
+});
+
+test("normalizeConjugationEntry validates canonical forms with 6 persons", () => {
+  const entry = normalizeConjugationEntry({
+    id: "cj-1",
+    language: "fr",
+    schoolGrade: 6,
+    unit: "Unit 1",
+    lemma: "parler",
+    german: "sprechen",
+    tense: "present",
+    forms: {
+      "1sg": "parle",
+      "2sg": "parles",
+      "3sg": "parle",
+      "1pl": "parlons",
+      "2pl": "parlez",
+      "3pl": "parlent"
+    }
+  });
+
+  assert.equal(Boolean(entry), true);
+  assert.equal(entry.language, "fr");
+  assert.equal(entry.schoolGrade, 6);
+  assert.equal(entry.tense, "present");
+  assert.deepEqual(Object.keys(entry.forms), CONJUGATION_PERSON_KEYS);
+});
+
+test("normalizeConjugationEntry rejects missing person forms", () => {
+  const entry = normalizeConjugationEntry({
+    lemma: "amare",
+    german: "lieben",
+    forms: {
+      "1sg": "amo",
+      "2sg": "amas"
+    }
+  });
+  assert.equal(entry, null);
+});
+
+test("getConjugationLanguagesForGrade returns languages by class", () => {
+  const entries = [
+    {
+      lemma: "to play",
+      german: "spielen",
+      language: "en",
+      schoolGrade: 6,
+      forms: { "1sg": "play", "2sg": "play", "3sg": "plays", "1pl": "play", "2pl": "play", "3pl": "play" }
+    },
+    {
+      lemma: "parler",
+      german: "sprechen",
+      language: "fr",
+      schoolGrade: 6,
+      forms: { "1sg": "parle", "2sg": "parles", "3sg": "parle", "1pl": "parlons", "2pl": "parlez", "3pl": "parlent" }
+    },
+    {
+      lemma: "amare",
+      german: "lieben",
+      language: "la",
+      schoolGrade: 7,
+      forms: { "1sg": "amo", "2sg": "amas", "3sg": "amat", "1pl": "amamus", "2pl": "amatis", "3pl": "amant" }
+    }
+  ];
+
+  assert.deepEqual(getConjugationLanguagesForGrade(entries, 6), ["en", "fr"]);
+  assert.deepEqual(getConjugationLanguagesForGrade(entries, 7), ["la"]);
 });

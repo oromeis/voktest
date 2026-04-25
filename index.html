@@ -154,12 +154,15 @@
               <button data-mode="learn" class="seg-btn active" type="button">Lernen</button>
               <button data-mode="quiz" class="seg-btn" type="button">Quiz</button>
               <button data-mode="test" class="seg-btn" type="button">Test</button>
+              <button data-mode="conjugation" class="seg-btn" type="button">Konjugation</button>
             </div>
 
-            <h3>Richtung</h3>
-            <div class="segmented">
-              <button data-direction="en-de" class="seg-btn active" type="button">EN -> DE</button>
-              <button data-direction="de-en" class="seg-btn" type="button">DE -> EN</button>
+            <div id="directionBlock">
+              <h3>Richtung</h3>
+              <div class="segmented">
+                <button data-direction="en-de" class="seg-btn active" type="button">EN -> DE</button>
+                <button data-direction="de-en" class="seg-btn" type="button">DE -> EN</button>
+              </div>
             </div>
 
             <details class="advanced-options">
@@ -291,7 +294,14 @@
             <h2>Einstellungen</h2>
             <p id="storageStatus" class="storage-status">Speicher: Nur lokal (kein Server verbunden).</p>
             <p id="appVersion" class="app-version">Version: wird geladen ...</p>
-            <h3>Vokabeln importieren</h3>
+            <h3>Import</h3>
+            <label>
+              Importtyp
+              <select id="importTypeSelect">
+                <option value="vocabulary" selected>Vokabeln</option>
+                <option value="conjugation">Konjugation</option>
+              </select>
+            </label>
             <div class="two-col">
               <label>
                 Klasse (Importziel)
@@ -302,33 +312,35 @@
                 <select id="importLanguageSelect"></select>
               </label>
             </div>
-            <p>
+            <p id="importFormatHint">
               Format 1: JSON-Array mit Feldern <code>foreign</code>/<code>english</code> und
               <code>german</code>.<br />
               Format 2 (empfohlen): CSV: <code>foreign;german;unit;page</code><br />
               Kompatibel bleiben auch ältere 5-/6-Spalten-Zeilen:
               <code>foreign;german;unit;lesson;page;topic;language;schoolGrade</code>
             </p>
-            <label>
-              Foto für OCR (Kamera oder Galerie)
-              <input id="ocrFileInput" type="file" accept="image/*" capture="environment" />
-            </label>
-            <div class="action-row">
-              <button id="ocrBtn" class="secondary-btn icon-btn" type="button" title="Foto mit OCR auslesen">
-                <span class="btn-icon" aria-hidden="true">📷</span>
-                <span>OCR</span>
-              </button>
+            <div id="ocrControls">
+              <label>
+                Foto für OCR (Kamera oder Galerie)
+                <input id="ocrFileInput" type="file" accept="image/*" capture="environment" />
+              </label>
+              <div class="action-row">
+                <button id="ocrBtn" class="secondary-btn icon-btn" type="button" title="Foto mit OCR auslesen">
+                  <span class="btn-icon" aria-hidden="true">📷</span>
+                  <span>OCR</span>
+                </button>
+              </div>
+              <p id="importOcrHint" class="admin-meta hidden"></p>
+              <p id="ocrFeedback" class="feedback"></p>
+              <details class="ocr-details">
+                <summary>OCR-Rohtext anzeigen</summary>
+                <textarea
+                  id="ocrRawText"
+                  rows="5"
+                  placeholder="Erkannter Text aus dem Foto erscheint hier."
+                ></textarea>
+              </details>
             </div>
-            <p id="importOcrHint" class="admin-meta hidden"></p>
-            <p id="ocrFeedback" class="feedback"></p>
-            <details class="ocr-details">
-              <summary>OCR-Rohtext anzeigen</summary>
-              <textarea
-                id="ocrRawText"
-                rows="5"
-                placeholder="Erkannter Text aus dem Foto erscheint hier."
-              ></textarea>
-            </details>
             <textarea
               id="importTextarea"
               rows="6"

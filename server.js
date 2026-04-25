@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
+  normalizeConjugationEntry,
   normalizeVocabularyEntry,
   sanitizeLanguageCode,
   sanitizeSchoolGrade
@@ -38,6 +39,7 @@ const STORAGE_KEYS = {
   history: "voktest_history_v1",
   mistakes: "voktest_mistakes_v1",
   customVocabulary: "voktest_custom_v1",
+  customConjugations: "voktest_custom_conjugations_v1",
   settings: "voktest_settings_v1",
   admin: "voktest_admin_v1",
   weeklyGoal: "voktest_weekly_goal_v1"
@@ -63,6 +65,7 @@ function createLegacyEmptyState() {
     [STORAGE_KEYS.history]: [],
     [STORAGE_KEYS.mistakes]: {},
     [STORAGE_KEYS.customVocabulary]: [],
+    [STORAGE_KEYS.customConjugations]: [],
     [STORAGE_KEYS.settings]: {},
     [STORAGE_KEYS.admin]: {},
     [STORAGE_KEYS.weeklyGoal]: null
@@ -82,7 +85,8 @@ function createEmptyState() {
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
     shared: {
-      customVocabulary: []
+      customVocabulary: [],
+      customConjugations: []
     },
     auth: {
       admin: {
@@ -165,9 +169,23 @@ function sanitizeVocabularyEntry(value) {
 
 function sanitizeShared(input) {
   const list = Array.isArray(input?.customVocabulary) ? input.customVocabulary : [];
+  const conjugations = Array.isArray(input?.customConjugations) ? input.customConjugations : [];
   return {
-    customVocabulary: list.map((entry) => sanitizeVocabularyEntry(entry)).filter(Boolean)
+    customVocabulary: list.map((entry) => sanitizeVocabularyEntry(entry)).filter(Boolean),
+    customConjugations: conjugations.map((entry) => sanitizeConjugationEntry(entry)).filter(Boolean)
   };
+}
+
+function sanitizeConjugationEntry(value) {
+  const normalized = normalizeConjugationEntry(value, {
+    fallbackLanguage: DEFAULT_LANGUAGE,
+    fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
+    idFallbackPrefix: "custom-conj"
+  });
+  if (!normalized) {
+    return null;
+  }
+  return normalized;
 }
 
 function sanitizeHistoryEntry(entry) {
@@ -176,7 +194,10 @@ function sanitizeHistoryEntry(entry) {
   const correct = Math.max(0, Math.min(total, Math.round(Number(value.correct) || 0)));
   const wrong = Math.max(0, Math.round(Number(value.wrong) || Math.max(0, total - correct)));
   const percent = total > 0 ? Math.round((correct / total) * 100) : 0;
-  const direction = value.direction === "de-en" ? "de-en" : "en-de";
+  const direction =
+    value.direction === "de-en" || value.direction === "conjugation"
+      ? value.direction
+      : "en-de";
   const language = sanitizeLanguageCode(value.language, DEFAULT_LANGUAGE);
   const unitRaw = typeof value.unit === "string" ? value.unit.trim() : "";
   const unit = unitRaw ? unitRaw.slice(0, 80) : "all";
@@ -186,7 +207,10 @@ function sanitizeHistoryEntry(entry) {
   return {
     date: sanitizeIsoString(value.date) || new Date().toISOString(),
     mode:
-      value.mode === "learn" || value.mode === "quiz" || value.mode === "test"
+      value.mode === "learn" ||
+      value.mode === "quiz" ||
+      value.mode === "test" ||
+      value.mode === "conjugation"
         ? value.mode
         : "test",
     direction,
@@ -231,7 +255,11 @@ function sanitizeMistakes(input) {
 
 function sanitizeSettings(input) {
   const value = input && typeof input === "object" ? input : {};
-  const mode = value.mode === "learn" || value.mode === "quiz" || value.mode === "test"
+  const mode =
+    value.mode === "learn" ||
+    value.mode === "quiz" ||
+    value.mode === "test" ||
+    value.mode === "conjugation"
     ? value.mode
     : "learn";
   const direction = value.direction === "en-de" || value.direction === "de-en"
@@ -244,6 +272,7 @@ function sanitizeSettings(input) {
   const language = sanitizeLanguageCode(value.language, DEFAULT_LANGUAGE);
   const importLanguage = sanitizeLanguageCode(value.importLanguage, DEFAULT_LANGUAGE);
   const importSchoolGrade = sanitizeSchoolGrade(value.importSchoolGrade, DEFAULT_SCHOOL_GRADE);
+  const importType = value.importType === "conjugation" ? "conjugation" : "vocabulary";
 
   return {
     mode,
@@ -254,7 +283,8 @@ function sanitizeSettings(input) {
     section,
     language,
     importLanguage,
-    importSchoolGrade
+    importSchoolGrade,
+    importType
   };
 }
 
@@ -387,6 +417,9 @@ function sanitizeLegacyState(input) {
   safe[STORAGE_KEYS.customVocabulary] = sanitizeShared({
     customVocabulary: safe[STORAGE_KEYS.customVocabulary]
   }).customVocabulary;
+  safe[STORAGE_KEYS.customConjugations] = sanitizeShared({
+    customConjugations: safe[STORAGE_KEYS.customConjugations]
+  }).customConjugations;
   safe[STORAGE_KEYS.settings] = sanitizeSettings(safe[STORAGE_KEYS.settings]);
   safe[STORAGE_KEYS.weeklyGoal] = sanitizeWeeklyGoal(safe[STORAGE_KEYS.weeklyGoal]);
   safe[STORAGE_KEYS.admin] = safe[STORAGE_KEYS.admin] && typeof safe[STORAGE_KEYS.admin] === "object"
@@ -448,6 +481,7 @@ async function migrateStateToV3(rawState) {
   const legacy = sanitizeLegacyState(rawState);
   const migrated = createEmptyState();
   migrated.shared.customVocabulary = legacy[STORAGE_KEYS.customVocabulary];
+  migrated.shared.customConjugations = legacy[STORAGE_KEYS.customConjugations];
 
   const defaultProfile = await createProfileWithPin({
     id: "u_legacy",
@@ -735,6 +769,7 @@ function buildLegacyStateView(v2State) {
     [STORAGE_KEYS.history]: userData[STORAGE_KEYS.history],
     [STORAGE_KEYS.mistakes]: userData[STORAGE_KEYS.mistakes],
     [STORAGE_KEYS.customVocabulary]: v2State.shared.customVocabulary,
+    [STORAGE_KEYS.customConjugations]: v2State.shared.customConjugations,
     [STORAGE_KEYS.settings]: userData[STORAGE_KEYS.settings],
     [STORAGE_KEYS.admin]: {},
     [STORAGE_KEYS.weeklyGoal]: userData[STORAGE_KEYS.weeklyGoal]
@@ -791,7 +826,8 @@ function buildStudentStateResponse(v2State, profileId) {
     [STORAGE_KEYS.mistakes]: userData[STORAGE_KEYS.mistakes],
     [STORAGE_KEYS.settings]: userData[STORAGE_KEYS.settings],
     [STORAGE_KEYS.weeklyGoal]: userData[STORAGE_KEYS.weeklyGoal],
-    [STORAGE_KEYS.customVocabulary]: v2State.shared.customVocabulary
+    [STORAGE_KEYS.customVocabulary]: v2State.shared.customVocabulary,
+    [STORAGE_KEYS.customConjugations]: v2State.shared.customConjugations
   };
 }
 
@@ -1265,6 +1301,7 @@ export async function createRuntime({
       sendJson(response, 200, {
         ok: true,
         customVocabulary: state.shared.customVocabulary,
+        customConjugations: state.shared.customConjugations,
         admin: {
           backupPinSet: hasBackupPin(state)
         }
@@ -1279,8 +1316,16 @@ export async function createRuntime({
         const incomingCustom = Object.prototype.hasOwnProperty.call(payload, STORAGE_KEYS.customVocabulary)
           ? payload[STORAGE_KEYS.customVocabulary]
           : payload.customVocabulary;
+        const incomingConjugations = Object.prototype.hasOwnProperty.call(payload, STORAGE_KEYS.customConjugations)
+          ? payload[STORAGE_KEYS.customConjugations]
+          : payload.customConjugations;
 
-        state.shared = sanitizeShared({ customVocabulary: incomingCustom });
+        state.shared = sanitizeShared({
+          customVocabulary:
+            incomingCustom === undefined ? state.shared.customVocabulary : incomingCustom,
+          customConjugations:
+            incomingConjugations === undefined ? state.shared.customConjugations : incomingConjugations
+        });
         await persistState();
         sendJson(response, 200, { ok: true, savedAt: nowIso() });
       } catch (error) {

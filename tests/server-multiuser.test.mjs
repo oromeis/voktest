@@ -75,6 +75,18 @@ test("legacy state migrates to schemaVersion 3 with u_legacy, PIN 0000 and defau
     [STORAGE_KEYS.history]: [{ total: 10, correct: 9, points: 50 }],
     [STORAGE_KEYS.mistakes]: { a: 2 },
     [STORAGE_KEYS.customVocabulary]: [{ id: "x", english: "cat", german: "Katze" }],
+    [STORAGE_KEYS.customConjugations]: [
+      {
+        id: "cx",
+        language: "en",
+        schoolGrade: 6,
+        unit: "Unit 1",
+        lemma: "to play",
+        german: "spielen",
+        tense: "present",
+        forms: { "1sg": "play", "2sg": "play", "3sg": "plays", "1pl": "play", "2pl": "play", "3pl": "play" }
+      }
+    ],
     [STORAGE_KEYS.settings]: { mode: "quiz", size: 12 },
     [STORAGE_KEYS.admin]: { backupPin: "9999" },
     [STORAGE_KEYS.weeklyGoal]: { weekKey: "2026-W16", targetMinutes: 90 }
@@ -96,6 +108,8 @@ test("legacy state migrates to schemaVersion 3 with u_legacy, PIN 0000 and defau
   assert.equal(Array.isArray(legacyData[STORAGE_KEYS.history]), true);
   assert.equal(legacyData[STORAGE_KEYS.history].length, 1);
   assert.equal(Array.isArray(migrated.state.shared.customVocabulary), true);
+  assert.equal(Array.isArray(migrated.state.shared.customConjugations), true);
+  assert.equal(migrated.state.shared.customConjugations.length, 1);
   assert.equal(Boolean(migrated.state.auth.admin.backupPinHash), true);
 });
 
@@ -106,6 +120,17 @@ test("schemaVersion 2 migrates to v3 and backfills profile class + entry languag
     shared: {
       customVocabulary: [
         { id: "c1", english: "cat", german: "Katze", unit: "Unit 1" }
+      ],
+      customConjugations: [
+        {
+          id: "cc1",
+          language: "la",
+          schoolGrade: 6,
+          unit: "Unit 1",
+          lemma: "amare",
+          german: "lieben",
+          forms: { "1sg": "amo", "2sg": "amas", "3sg": "amat", "1pl": "amamus", "2pl": "amatis", "3pl": "amant" }
+        }
       ]
     },
     auth: {
@@ -137,6 +162,8 @@ test("schemaVersion 2 migrates to v3 and backfills profile class + entry languag
   assert.equal(migrated.state.shared.customVocabulary[0].foreign, "cat");
   assert.equal(migrated.state.shared.customVocabulary[0].language, "en");
   assert.equal(migrated.state.shared.customVocabulary[0].schoolGrade, 6);
+  assert.equal(migrated.state.shared.customConjugations[0].language, "la");
+  assert.equal(migrated.state.shared.customConjugations[0].forms["1sg"], "amo");
 });
 
 test("student login exposes only own state and blocks admin routes", async () => {
@@ -230,6 +257,25 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
             schoolGrade: 7,
             unit: "Unit L1"
           }
+        ],
+        [STORAGE_KEYS.customConjugations]: [
+          {
+            id: "conj-1",
+            language: "la",
+            schoolGrade: 7,
+            unit: "Unit L1",
+            lemma: "amare",
+            german: "lieben",
+            tense: "present",
+            forms: {
+              "1sg": "amo",
+              "2sg": "amas",
+              "3sg": "amat",
+              "1pl": "amamus",
+              "2pl": "amatis",
+              "3pl": "amant"
+            }
+          }
         ]
       }
     });
@@ -286,6 +332,9 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary].length, 1);
     assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary][0].language, "la");
     assert.equal(studentState.payload.state[STORAGE_KEYS.customVocabulary][0].foreign, "amor");
+    assert.equal(Array.isArray(studentState.payload.state[STORAGE_KEYS.customConjugations]), true);
+    assert.equal(studentState.payload.state[STORAGE_KEYS.customConjugations].length, 1);
+    assert.equal(studentState.payload.state[STORAGE_KEYS.customConjugations][0].lemma, "amare");
 
     const writeHistory = await requestJson(baseUrl, "/api/me/state", {
       method: "PUT",
@@ -294,8 +343,8 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
         [STORAGE_KEYS.history]: [
           {
             date: "2026-04-22T14:30:00.000Z",
-            mode: "quiz",
-            direction: "de-en",
+            mode: "conjugation",
+            direction: "conjugation",
             language: "la",
             unit: "Unit L1",
             focus: "mistakes",
@@ -325,6 +374,8 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(Array.isArray(adminProfileHistory.payload.history), true);
     assert.equal(adminProfileHistory.payload.history.length, 1);
     assert.equal(adminProfileHistory.payload.history[0].language, "la");
+    assert.equal(adminProfileHistory.payload.history[0].mode, "conjugation");
+    assert.equal(adminProfileHistory.payload.history[0].direction, "conjugation");
     assert.equal(adminProfileHistory.payload.history[0].unit, "Unit L1");
     assert.equal(adminProfileHistory.payload.history[0].focus, "mistakes");
     assert.equal(adminProfileHistory.payload.history[0].size, 12);
