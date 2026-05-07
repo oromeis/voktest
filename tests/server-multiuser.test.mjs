@@ -252,6 +252,19 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(saveTimer.status, 200);
     assert.equal(saveTimer.payload.answerTimerSeconds, 18);
 
+    const saveProfileWithTimer = await requestJson(baseUrl, `/api/admin/profiles/${encodeURIComponent(createdId)}`, {
+      method: "PUT",
+      token: adminToken,
+      body: {
+        name: "Nutzer B",
+        active: true,
+        schoolGrade: 7,
+        answerTimerSeconds: 25
+      }
+    });
+    assert.equal(saveProfileWithTimer.status, 200);
+    assert.equal(saveProfileWithTimer.payload.profile.answerTimerSeconds, 25);
+
     const saveShared = await requestJson(baseUrl, "/api/admin/shared", {
       method: "PUT",
       token: adminToken,
@@ -298,7 +311,7 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(Boolean(editedProfile), true);
     assert.equal(editedProfile.kpi.weekTargetMinutes, 90);
     assert.equal(editedProfile.schoolGrade, 7);
-    assert.equal(editedProfile.answerTimerSeconds, 18);
+    assert.equal(editedProfile.answerTimerSeconds, 25);
 
     const studentLogin = await requestJson(baseUrl, "/api/auth/login", {
       method: "POST",
@@ -344,7 +357,7 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(Array.isArray(studentState.payload.state[STORAGE_KEYS.customConjugations]), true);
     assert.equal(studentState.payload.state[STORAGE_KEYS.customConjugations].length, 1);
     assert.equal(studentState.payload.state[STORAGE_KEYS.customConjugations][0].lemma, "amare");
-    assert.equal(studentState.payload.state[STORAGE_KEYS.answerTimer], 18);
+    assert.equal(studentState.payload.state[STORAGE_KEYS.answerTimer], 25);
 
     const writeHistory = await requestJson(baseUrl, "/api/me/state", {
       method: "PUT",
@@ -421,7 +434,7 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(historyAfterReset.status, 200);
     assert.equal(Array.isArray(historyAfterReset.payload.history), true);
     assert.equal(historyAfterReset.payload.history.length, 0);
-    assert.equal(historyAfterReset.payload.profile.answerTimerSeconds, 18);
+    assert.equal(historyAfterReset.payload.profile.answerTimerSeconds, 25);
 
     const staleStudentTokenAfterReset = await requestJson(baseUrl, "/api/me/state", {
       method: "GET",

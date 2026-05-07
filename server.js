@@ -1704,6 +1704,10 @@ export async function createRuntime({
           : profile.schoolGrade,
         DEFAULT_SCHOOL_GRADE
       );
+      const userData = ensureUserDataById(profile.id);
+      const nextAnswerTimerSeconds = Object.prototype.hasOwnProperty.call(payload, "answerTimerSeconds")
+        ? sanitizeAnswerTimerSeconds(payload.answerTimerSeconds, DEFAULT_ANSWER_TIMER_SECONDS)
+        : sanitizeAnswerTimerSeconds(userData[STORAGE_KEYS.answerTimer], DEFAULT_ANSWER_TIMER_SECONDS);
       const nextPin = typeof payload.pin === "string" ? sanitizePinInput(payload.pin) : "";
       if (typeof payload.pin === "string" && !nextPin) {
         sendJson(response, 400, { ok: false, error: "invalid_pin" });
@@ -1714,6 +1718,8 @@ export async function createRuntime({
       profile.active = !!nextActive;
       profile.schoolGrade = nextSchoolGrade;
       profile.updatedAt = nowIso();
+      userData[STORAGE_KEYS.answerTimer] = nextAnswerTimerSeconds;
+      state.userDataById[profile.id] = sanitizeUserData(userData);
 
       if (nextPin) {
         const hashed = await hashSecret(nextPin);

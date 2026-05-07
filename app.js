@@ -2289,7 +2289,11 @@ async function handleSaveProfile() {
   const payload = {
     name: el.editProfileNameInput.value.trim(),
     active: !!el.editProfileActiveInput.checked,
-    schoolGrade: sanitizeSchoolGrade(el.editProfileGradeSelect.value, DEFAULT_SCHOOL_GRADE)
+    schoolGrade: sanitizeSchoolGrade(el.editProfileGradeSelect.value, DEFAULT_SCHOOL_GRADE),
+    answerTimerSeconds: sanitizeAnswerTimerSeconds(
+      el.editProfileTimerInput.value,
+      DEFAULT_ANSWER_TIMER_SECONDS
+    )
   };
   if (!payload.name) {
     setAdminSettingsFeedback("Profilname darf nicht leer sein.", false);
