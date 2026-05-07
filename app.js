@@ -3,12 +3,15 @@ import { BASE_VOCABULARY_FR6 } from "./data/vocabulary-fr6.js";
 import { BASE_VOCABULARY_LA6 } from "./data/vocabulary-la6.js";
 import { BASE_CONJUGATIONS } from "./data/conjugations.js";
 import {
+  DEFAULT_ANSWER_TIMER_SECONDS,
   DEFAULT_TARGET_MINUTES,
+  computeTimedAnswerPoints,
   computeRewardBonusPoints,
   createWeeklyGoal,
   getRewardLabel,
   getWeekContext,
   isDateWithinRange,
+  sanitizeAnswerTimerSeconds,
   sanitizeTargetMinutes,
   secondsToMinutes
 } from "./modules/admin-utils.js";
@@ -45,7 +48,8 @@ const STORAGE_KEYS = {
   customConjugations: "voktest_custom_conjugations_v1",
   settings: "voktest_settings_v1",
   admin: "voktest_admin_v1",
-  weeklyGoal: "voktest_weekly_goal_v1"
+  weeklyGoal: "voktest_weekly_goal_v1",
+  answerTimer: "voktest_answer_timer_v1"
 };
 
 const SUPPORTED_MODES = ["learn", "quiz", "test", "conjugation"];
@@ -111,44 +115,84 @@ const CONJUGATION_PRONOUNS = {
 const LEVEL_TITLES = [
   "Wortstarter",
   "Satzbauer",
+  "Lernfuchs",
   "Sprachdetektiv",
+  "Vokabelsammler",
+  "Textentdecker",
+  "Übungsass",
+  "Wortforscher",
+  "Satzakrobat",
+  "Grammatikhelfer",
+  "Sprachwerker",
+  "Vokabelpilot",
+  "Fehlerfinder",
+  "Antwortkünstler",
+  "Lernrakete",
+  "Sprachkompass",
+  "Texttüftler",
+  "Phrasenprofi",
+  "Satzzauberer",
+  "Klassenprofi",
+  "Wissensfunke",
+  "Wortakrobat",
   "Vokabelprofi",
   "Textmeister",
-  "Klassenchampion",
-  "Lernrakete",
-  "Wortakrobat",
+  "Englischheld",
+  "Französischprofi",
+  "Lateinlotse",
   "Grammatikfuchs",
   "Sprachstratege",
   "Vokabelnavigator",
-  "Quizkommandant",
-  "Fehlerjäger",
-  "Satzzauberer",
+  "Konjugationsheld",
+  "Formendetektiv",
+  "Quizstarter",
   "Punktemagnet",
-  "Levellegende",
-  "Englischheld",
+  "Fehlerjäger",
+  "Lernchampion",
   "Meisterdenker",
-  "Wortkönig",
-  "Champion Supreme",
-  "Spracharchitekt",
   "Wissenswirbel",
   "Vokabelblitz",
-  "Lernkompass",
-  "Satzakrobatin",
-  "Übungsass",
   "Sprachpilot",
-  "Grammatikgenie",
+  "Satzstratege",
   "Quizmagier",
+  "Tempo-Profi",
+  "Antwortstratege",
   "Wortchampion",
-  "Lernlegende",
   "Sprachenjäger",
-  "Phrasenprofi",
-  "Vokabelmeister",
-  "Sprachsammler",
-  "Antwortkünstler",
-  "Turbo-Lerner",
+  "Grammatikgenie",
+  "Quiztitan",
+  "Konjugationsmeister",
+  "Formenmeister",
+  "Phrasenpilot",
+  "Textlenker",
+  "Spracharchitekt",
   "Worttaktiker",
+  "Vokabelritter",
+  "Sprachenlenker",
+  "Quizkommandant",
+  "Wortgeneral",
+  "Antwortnavigator",
+  "Lernarchitekt",
+  "Vokabelmeister",
+  "Sprachmeister",
+  "Wortkönig",
+  "Klassenchampion",
+  "Satzkapitän",
+  "Grammatikmeister",
+  "Turbo-Lerner",
+  "Lernlegende",
+  "Sprachwächter",
+  "Fehlerbändiger",
+  "Vokabeltitan",
+  "Quizmonarch",
+  "Textlegende",
   "Meister der Modi",
-  "Language-King-Legende"
+  "Sprachlegende",
+  "Wortimperator",
+  "Satzsouverän",
+  "Sprachenkaiser",
+  "Language-King-Legende",
+  "Language-King-Mythos"
 ];
 
 const DEFAULT_ADMIN_CONFIG = {
@@ -176,6 +220,7 @@ const state = {
   settings: { ...DEFAULT_SETTINGS },
   adminConfig: { ...DEFAULT_ADMIN_CONFIG },
   weeklyGoal: null,
+  answerTimerSeconds: DEFAULT_ANSWER_TIMER_SECONDS,
   session: null,
   deferredInstallPrompt: null,
   auth: {
@@ -233,6 +278,9 @@ const el = {
   progressText: document.getElementById("progressText"),
   streakChip: document.getElementById("streakChip"),
   pointsChip: document.getElementById("pointsChip"),
+  questionTimerPanel: document.getElementById("questionTimerPanel"),
+  questionTimerText: document.getElementById("questionTimerText"),
+  questionTimerBarFill: document.getElementById("questionTimerBarFill"),
   questionLabel: document.getElementById("questionLabel"),
   questionText: document.getElementById("questionText"),
   hintText: document.getElementById("hintText"),
@@ -244,6 +292,7 @@ const el = {
   feedbackText: document.getElementById("feedbackText"),
   answerForm: document.getElementById("answerForm"),
   answerInput: document.getElementById("answerInput"),
+  answerSubmitBtn: document.querySelector("#answerForm button[type='submit']"),
   skipBtn: document.getElementById("skipBtn"),
   mcOptions: document.getElementById("mcOptions"),
   optionTemplate: document.getElementById("optionTemplate"),
@@ -286,8 +335,10 @@ const el = {
   editProfilePinInput: document.getElementById("editProfilePinInput"),
   editProfileActiveInput: document.getElementById("editProfileActiveInput"),
   editProfileGoalInput: document.getElementById("editProfileGoalInput"),
+  editProfileTimerInput: document.getElementById("editProfileTimerInput"),
   saveProfileBtn: document.getElementById("saveProfileBtn"),
   saveProfileGoalBtn: document.getElementById("saveProfileGoalBtn"),
+  saveProfileTimerBtn: document.getElementById("saveProfileTimerBtn"),
   viewProfileHistoryBtn: document.getElementById("viewProfileHistoryBtn"),
   resetProfilePinBtn: document.getElementById("resetProfilePinBtn"),
   resetProfileProgressBtn: document.getElementById("resetProfileProgressBtn"),
@@ -345,7 +396,16 @@ const importModule = createImportModule({
 
 let feedbackTimeoutId = null;
 let sessionTickIntervalId = null;
+let questionTimerIntervalId = null;
 let reconnectIntervalId = null;
+const QUESTION_TIMER_TICK_MS = 200;
+
+const ANSWER_FEEDBACK_TIMINGS = {
+  correctText: { bannerMs: 1100, advanceMs: 1250 },
+  wrongText: { bannerMs: 2200, advanceMs: 2400 },
+  correctChoice: { bannerMs: 950, advanceMs: 1100 },
+  wrongChoice: { bannerMs: 1650, advanceMs: 1850 }
+};
 
 void init();
 
@@ -556,6 +616,9 @@ function bindEvents() {
   });
   el.saveProfileGoalBtn.addEventListener("click", () => {
     void handleSaveProfileGoal();
+  });
+  el.saveProfileTimerBtn.addEventListener("click", () => {
+    void handleSaveProfileTimer();
   });
   el.viewProfileHistoryBtn.addEventListener("click", () => {
     void handleViewProfileHistory();
@@ -1162,6 +1225,15 @@ function startSession(focusMode = "all") {
     bestStreak: 0,
     wrongItems: [],
     weekKey: state.weeklyGoal?.weekKey || getWeekContext(new Date()).weekKey,
+    answerTimerSeconds:
+      activeMode === "learn"
+        ? DEFAULT_ANSWER_TIMER_SECONDS
+        : getConfiguredAnswerTimerSeconds(),
+    questionElapsedMs: 0,
+    questionStartedAt: null,
+    questionLocked: false,
+    questionSubmitted: false,
+    questionAnswerElapsedMs: 0,
     activeSeconds: 0,
     activeStartedAt: document.visibilityState === "visible" ? Date.now() : null
   };
@@ -1174,7 +1246,217 @@ function startSession(focusMode = "all") {
 }
 
 function getCurrentQuestion() {
-  return state.session.questions[state.session.index];
+  if (!state.session || !Array.isArray(state.session.questions)) {
+    return null;
+  }
+  return state.session.questions[state.session.index] || null;
+}
+
+function getConfiguredAnswerTimerSeconds() {
+  return sanitizeAnswerTimerSeconds(state.answerTimerSeconds, DEFAULT_ANSWER_TIMER_SECONDS);
+}
+
+function isAnswerTimerActive(session = state.session) {
+  return Boolean(
+    session &&
+      session.mode !== "learn" &&
+      sanitizeAnswerTimerSeconds(session.answerTimerSeconds, DEFAULT_ANSWER_TIMER_SECONDS) > 0
+  );
+}
+
+function resetQuestionState(session) {
+  if (!session) {
+    return;
+  }
+  session.questionElapsedMs = 0;
+  session.questionStartedAt =
+    isAnswerTimerActive(session) && document.visibilityState === "visible" ? Date.now() : null;
+  session.questionLocked = false;
+  session.questionSubmitted = false;
+  session.questionAnswerElapsedMs = 0;
+}
+
+function getCurrentQuestionElapsedMs(session) {
+  if (!session || !isAnswerTimerActive(session)) {
+    return 0;
+  }
+
+  let elapsedMs = Math.max(0, Number(session.questionElapsedMs) || 0);
+  if (session.questionStartedAt !== null && document.visibilityState === "visible") {
+    elapsedMs += Date.now() - session.questionStartedAt;
+  }
+  return Math.max(0, elapsedMs);
+}
+
+function getCurrentQuestionRemainingMs(session) {
+  if (!session || !isAnswerTimerActive(session)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const limitMs = session.answerTimerSeconds * 1000;
+  return Math.max(0, limitMs - getCurrentQuestionElapsedMs(session));
+}
+
+function pauseQuestionCountdown(session) {
+  if (!session || !isAnswerTimerActive(session) || session.questionStartedAt === null) {
+    return;
+  }
+  session.questionElapsedMs = getCurrentQuestionElapsedMs(session);
+  session.questionStartedAt = null;
+}
+
+function resumeQuestionCountdown(session) {
+  if (
+    !session ||
+    !isAnswerTimerActive(session) ||
+    session.questionLocked ||
+    session.questionSubmitted ||
+    session.questionStartedAt !== null
+  ) {
+    return;
+  }
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  session.questionStartedAt = Date.now();
+}
+
+function resetQuestionControls() {
+  if (el.answerInput) {
+    el.answerInput.disabled = false;
+  }
+  if (el.answerSubmitBtn) {
+    el.answerSubmitBtn.disabled = false;
+  }
+  if (el.skipBtn) {
+    el.skipBtn.disabled = false;
+  }
+  if (el.showAnswerBtn) {
+    el.showAnswerBtn.disabled = false;
+  }
+  if (el.knewBtn) {
+    el.knewBtn.disabled = false;
+  }
+  if (el.againBtn) {
+    el.againBtn.disabled = false;
+  }
+}
+
+function setQuestionControlsDisabled(disabled) {
+  if (el.answerInput) {
+    el.answerInput.disabled = disabled;
+  }
+  if (el.answerSubmitBtn) {
+    el.answerSubmitBtn.disabled = disabled;
+  }
+  if (el.skipBtn) {
+    el.skipBtn.disabled = disabled;
+  }
+  if (el.showAnswerBtn) {
+    el.showAnswerBtn.disabled = disabled;
+  }
+  if (el.knewBtn) {
+    el.knewBtn.disabled = disabled;
+  }
+  if (el.againBtn) {
+    el.againBtn.disabled = disabled;
+  }
+  Array.from(el.mcOptions.children).forEach((button) => {
+    button.disabled = disabled;
+  });
+}
+
+function lockActiveQuestion(session, elapsedMsOverride = null) {
+  if (!session) {
+    return 0;
+  }
+  if (session.questionLocked) {
+    return Math.max(0, Number(session.questionAnswerElapsedMs) || 0);
+  }
+
+  const elapsedMs = Number.isFinite(Number(elapsedMsOverride))
+    ? Math.max(0, Number(elapsedMsOverride))
+    : getCurrentQuestionElapsedMs(session);
+
+  session.questionLocked = true;
+  session.questionElapsedMs = elapsedMs;
+  session.questionAnswerElapsedMs = elapsedMs;
+  session.questionStartedAt = null;
+  setQuestionControlsDisabled(true);
+  renderQuestionTimerState();
+  return elapsedMs;
+}
+
+function revealCorrectMultipleChoiceAnswer(question) {
+  Array.from(el.mcOptions.children).forEach((button) => {
+    button.disabled = true;
+    if (isAnswerCorrect(button.textContent || "", question.answerVariants)) {
+      button.classList.add("correct");
+    }
+  });
+}
+
+function renderQuestionTimerState() {
+  if (!el.questionTimerPanel || !el.questionTimerText || !el.questionTimerBarFill) {
+    return;
+  }
+
+  const session = state.session;
+  if (!isAnswerTimerActive(session) || !getCurrentQuestion()) {
+    el.questionTimerPanel.className = "question-timer hidden";
+    el.questionTimerPanel.setAttribute("aria-hidden", "true");
+    el.questionTimerText.textContent = "--";
+    el.questionTimerBarFill.style.width = "0%";
+    return;
+  }
+
+  const limitMs = session.answerTimerSeconds * 1000;
+  const elapsedMs = session.questionLocked
+    ? Math.max(0, Number(session.questionAnswerElapsedMs) || 0)
+    : getCurrentQuestionElapsedMs(session);
+  const remainingMs = Math.max(0, limitMs - elapsedMs);
+  const remainingRatio = limitMs > 0 ? remainingMs / limitMs : 0;
+  const remainingSeconds = Math.ceil(remainingMs / 1000);
+  const danger = remainingRatio <= 0.2;
+  const warning = !danger && remainingRatio <= 0.45;
+
+  el.questionTimerPanel.className = `question-timer${warning ? " warning" : ""}${danger ? " danger" : ""}`;
+  el.questionTimerPanel.setAttribute("aria-hidden", "false");
+  el.questionTimerText.textContent = `${remainingSeconds} s`;
+  el.questionTimerBarFill.style.width = `${Math.max(0, Math.min(100, remainingRatio * 100))}%`;
+}
+
+function getCorrectAnswerFeedbackText(pointsResult) {
+  if (!pointsResult.active || pointsResult.speedBonusPoints <= 0) {
+    return "Richtig.";
+  }
+  return `Richtig. Tempo-Bonus: +${pointsResult.speedBonusPoints}.`;
+}
+
+function getCorrectAnswerBannerText(pointsResult) {
+  if (!pointsResult.active || pointsResult.speedBonusPoints <= 0) {
+    return `Stark! +${pointsResult.totalPoints} Punkte`;
+  }
+  return `Stark! +${pointsResult.totalPoints} Punkte · Tempo +${pointsResult.speedBonusPoints}`;
+}
+
+function handleQuestionTimeout() {
+  const session = state.session;
+  const question = getCurrentQuestion();
+  if (!session || !question || !isAnswerTimerActive(session) || session.questionLocked || session.questionSubmitted) {
+    return;
+  }
+
+  lockActiveQuestion(session);
+  if (session.mode === "quiz" || question.responseType === "mc") {
+    revealCorrectMultipleChoiceAnswer(question);
+  }
+
+  submitQuestion(false, "(Zeit abgelaufen)", {
+    elapsedMsOverride: session.questionAnswerElapsedMs,
+    feedbackText: `Zeit abgelaufen. Richtig wäre: ${question.answerDisplay}`,
+    bannerText: "Zeit abgelaufen.",
+    isTimeout: true
+  });
 }
 
 function renderQuestion() {
@@ -1186,6 +1468,7 @@ function renderQuestion() {
     return;
   }
 
+  resetQuestionState(session);
   el.progressText.textContent = `Frage ${session.index + 1} von ${session.questions.length}`;
   el.streakChip.textContent = `Streak ${session.streak}`;
   el.pointsChip.textContent = `Punkte ${session.points}`;
@@ -1196,13 +1479,14 @@ function renderQuestion() {
   setFeedback("", true);
   el.answerInput.value = "";
   el.answerInput.blur();
+  resetQuestionControls();
 
   el.answerForm.classList.add("hidden");
   el.learnActions.classList.add("hidden");
   el.knowButtons.classList.add("hidden");
-  el.showAnswerBtn.disabled = false;
   el.mcOptions.classList.add("hidden");
   el.mcOptions.innerHTML = "";
+  renderQuestionTimerState();
 
   if (session.mode === "learn") {
     el.learnActions.classList.remove("hidden");
@@ -1240,6 +1524,11 @@ function renderMultipleChoice(question) {
     const node = el.optionTemplate.content.firstElementChild.cloneNode(true);
     node.textContent = option;
     node.addEventListener("click", () => {
+      const session = state.session;
+      if (!session || session.questionLocked || session.questionSubmitted) {
+        return;
+      }
+      const answeredElapsedMs = lockActiveQuestion(session);
       const isCorrect = isAnswerCorrect(option, question.answerVariants);
       Array.from(el.mcOptions.children).forEach((btn) => {
         btn.disabled = true;
@@ -1256,7 +1545,7 @@ function renderMultipleChoice(question) {
         });
       }
 
-      setTimeout(() => submitQuestion(isCorrect, option), 550);
+      setTimeout(() => submitQuestion(isCorrect, option, { elapsedMsOverride: answeredElapsedMs }), 550);
     });
 
     el.mcOptions.append(node);
@@ -1295,18 +1584,51 @@ function getConjugationDistractors(question) {
   return unique;
 }
 
-function submitQuestion(isCorrect, userAnswer) {
+function submitQuestion(isCorrect, userAnswer, options = {}) {
   const session = state.session;
   const question = getCurrentQuestion();
+  if (!session || !question || session.questionSubmitted) {
+    return;
+  }
 
-  if (isCorrect) {
+  const answerElapsedMs = lockActiveQuestion(session, options.elapsedMsOverride);
+  let resolvedIsCorrect = isCorrect;
+  let resolvedUserAnswer = userAnswer;
+  const resolvedOptions = { ...options };
+  if (
+    !resolvedOptions.isTimeout &&
+    isAnswerTimerActive(session) &&
+    answerElapsedMs >= session.answerTimerSeconds * 1000
+  ) {
+    resolvedIsCorrect = false;
+    resolvedUserAnswer = "(Zeit abgelaufen)";
+    resolvedOptions.isTimeout = true;
+    resolvedOptions.feedbackText = `Zeit abgelaufen. Richtig wäre: ${question.answerDisplay}`;
+    resolvedOptions.bannerText = "Zeit abgelaufen.";
+    if (session.mode === "quiz" || question.responseType === "mc") {
+      revealCorrectMultipleChoiceAnswer(question);
+    }
+  }
+  session.questionSubmitted = true;
+  const feedbackTiming = getAnswerFeedbackTiming(session, question, resolvedIsCorrect);
+
+  if (resolvedIsCorrect) {
     session.correct += 1;
     session.streak += 1;
     session.bestStreak = Math.max(session.bestStreak, session.streak);
-    const gained = 8 + Math.min(session.streak, 6);
-    session.points += gained;
-    setFeedback("Richtig.", true);
-    showBigFeedback(`Stark! +${gained} Punkte`, true);
+    const basePoints = 8 + Math.min(session.streak, 6);
+    const pointsResult = computeTimedAnswerPoints(
+      basePoints,
+      answerElapsedMs,
+      session.answerTimerSeconds
+    );
+    session.points += pointsResult.totalPoints;
+    setFeedback(resolvedOptions.feedbackText || getCorrectAnswerFeedbackText(pointsResult), true);
+    showBigFeedback(
+      resolvedOptions.bannerText || getCorrectAnswerBannerText(pointsResult),
+      true,
+      feedbackTiming.bannerMs
+    );
     triggerSparkles();
     safeVibrate([14]);
   } else {
@@ -1316,13 +1638,20 @@ function submitQuestion(isCorrect, userAnswer) {
     session.wrongItems.push({
       prompt: question.prompt,
       expected: question.answerDisplay,
-      answer: userAnswer
+      answer: resolvedUserAnswer
     });
     const mistakeId = question.mistakeId || question.entry.id;
     state.mistakes[mistakeId] = (state.mistakes[mistakeId] || 0) + 1;
     save(STORAGE_KEYS.mistakes, state.mistakes);
-    setFeedback(`Nicht ganz. Richtig wäre: ${question.answerDisplay}`, false);
-    showBigFeedback("Fast! Weiter geht's.", false);
+    setFeedback(
+      resolvedOptions.feedbackText || `Nicht ganz. Richtig wäre: ${question.answerDisplay}`,
+      false
+    );
+    showBigFeedback(
+      resolvedOptions.bannerText || (resolvedOptions.isTimeout ? "Zeit abgelaufen." : "Fast! Weiter geht's."),
+      false,
+      feedbackTiming.bannerMs
+    );
     safeVibrate([25, 35, 25]);
   }
 
@@ -1333,12 +1662,26 @@ function submitQuestion(isCorrect, userAnswer) {
   session.index += 1;
 
   setTimeout(() => {
+    hideBigFeedback();
     if (session.index >= session.questions.length) {
       finishSession();
       return;
     }
     renderQuestion();
-  }, session.mode === "test" || question.responseType === "text" ? 450 : 320);
+  }, feedbackTiming.advanceMs);
+}
+
+function getAnswerFeedbackTiming(session, question, isCorrect) {
+  const isChoiceQuestion = session?.mode === "quiz" || question?.responseType === "mc";
+  if (isChoiceQuestion) {
+    return isCorrect
+      ? ANSWER_FEEDBACK_TIMINGS.correctChoice
+      : ANSWER_FEEDBACK_TIMINGS.wrongChoice;
+  }
+
+  return isCorrect
+    ? ANSWER_FEEDBACK_TIMINGS.correctText
+    : ANSWER_FEEDBACK_TIMINGS.wrongText;
 }
 
 function finishSession() {
@@ -1356,6 +1699,7 @@ function finishSession() {
   renderAdminState();
   renderWeeklyGoalHint();
   state.session = null;
+  renderQuestionTimerState();
   el.progressText.textContent = "Runde beendet. Du kannst direkt die nächste starten.";
 }
 
@@ -1383,6 +1727,7 @@ function renderIdleState() {
   hideBigFeedback();
   el.feedbackText.textContent = "";
   el.feedbackText.className = "feedback";
+  renderQuestionTimerState();
   updateGamificationWidgets(0);
   renderWeeklyGoalHint();
 }
@@ -1400,10 +1745,13 @@ function bindSessionVisibilityTracking() {
 
     if (document.visibilityState === "hidden") {
       pauseSessionTimer(state.session);
+      pauseQuestionCountdown(state.session);
     } else if (document.visibilityState === "visible") {
       resumeSessionTimer(state.session);
+      resumeQuestionCountdown(state.session);
     }
 
+    renderQuestionTimerState();
     renderWeeklyGoalHint();
     if (state.settings.section === "admin") {
       renderAdminState();
@@ -1419,10 +1767,32 @@ function bindSessionVisibilityTracking() {
       return;
     }
     renderWeeklyGoalHint();
+    renderQuestionTimerState();
     if (state.settings.section === "admin") {
       renderAdminState();
     }
   }, 15000);
+
+  if (questionTimerIntervalId) {
+    clearInterval(questionTimerIntervalId);
+  }
+
+  questionTimerIntervalId = window.setInterval(() => {
+    if (!state.session) {
+      renderQuestionTimerState();
+      return;
+    }
+
+    renderQuestionTimerState();
+    if (
+      isAnswerTimerActive(state.session) &&
+      !state.session.questionLocked &&
+      !state.session.questionSubmitted &&
+      getCurrentQuestionRemainingMs(state.session) <= 0
+    ) {
+      handleQuestionTimeout();
+    }
+  }, QUESTION_TIMER_TICK_MS);
 }
 
 function pauseSessionTimer(session) {
@@ -1786,6 +2156,11 @@ function renderAdminState() {
       const levelTitle = getLevelTitle(levelInfo.level);
       const pinStatus = profile.pinSet === false ? "PIN offen" : "PIN gesetzt";
       const schoolGrade = sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE);
+      const answerTimerSeconds = sanitizeAnswerTimerSeconds(
+        profile.answerTimerSeconds,
+        DEFAULT_ANSWER_TIMER_SECONDS
+      );
+      const timerLabel = answerTimerSeconds > 0 ? `Timer ${answerTimerSeconds}s` : "Timer aus";
       const statusSuffix = profile.active ? "" : " · (deaktiviert)";
       const button = document.createElement("button");
       button.type = "button";
@@ -1800,6 +2175,7 @@ function renderAdminState() {
           <span class="admin-profile-pill level">Level ${levelInfo.level}</span>
           <span class="admin-profile-pill title">${levelTitle}</span>
           <span class="admin-profile-pill week">Woche ${weekUsed}/${weekTarget} Min</span>
+          <span class="admin-profile-pill timer">${timerLabel}</span>
         </div>
       `;
       button.addEventListener("click", () => {
@@ -1834,18 +2210,24 @@ function syncEditProfileFields() {
     el.editProfilePinInput.value = "";
     el.editProfileGradeSelect.value = String(DEFAULT_SCHOOL_GRADE);
     el.editProfileGoalInput.value = String(DEFAULT_TARGET_MINUTES);
+    el.editProfileTimerInput.value = String(DEFAULT_ANSWER_TIMER_SECONDS);
     el.editProfileActiveInput.checked = true;
     renderAdminProfileHistory();
     return;
   }
 
   const targetMinutes = Number(profile?.kpi?.weekTargetMinutes) || DEFAULT_TARGET_MINUTES;
+  const answerTimerSeconds = sanitizeAnswerTimerSeconds(
+    profile.answerTimerSeconds,
+    DEFAULT_ANSWER_TIMER_SECONDS
+  );
   el.editProfileNameInput.value = profile.name || "";
   el.editProfileGradeSelect.value = String(
     sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE)
   );
   el.editProfilePinInput.value = "";
   el.editProfileGoalInput.value = String(targetMinutes);
+  el.editProfileTimerInput.value = String(answerTimerSeconds);
   el.editProfileActiveInput.checked = profile.active !== false;
   renderAdminProfileHistory();
 }
@@ -1962,6 +2344,41 @@ async function handleSaveProfileGoal() {
 
   await refreshAdminProfiles();
   setAdminSettingsFeedback(`Wochenziel gespeichert: ${targetMinutes} Minuten.`, true);
+}
+
+async function handleSaveProfileTimer() {
+  if (state.auth.role !== "admin") {
+    return;
+  }
+
+  const profileId = state.auth.selectedProfileId;
+  if (!profileId) {
+    setAdminSettingsFeedback("Bitte Profil auswählen.", false);
+    return;
+  }
+
+  const answerTimerSeconds = sanitizeAnswerTimerSeconds(
+    el.editProfileTimerInput.value,
+    DEFAULT_ANSWER_TIMER_SECONDS
+  );
+  const response = await apiRequest(`/api/admin/profiles/${encodeURIComponent(profileId)}/timer`, {
+    method: "PUT",
+    body: {
+      answerTimerSeconds
+    }
+  });
+  if (!response.ok) {
+    setAdminSettingsFeedback(response.error || "Antwort-Timer konnte nicht gespeichert werden.", false);
+    return;
+  }
+
+  await refreshAdminProfiles();
+  setAdminSettingsFeedback(
+    answerTimerSeconds > 0
+      ? `Antwort-Timer gespeichert: ${answerTimerSeconds} Sekunden.`
+      : "Antwort-Timer deaktiviert.",
+    true
+  );
 }
 
 async function handleResetProfilePin() {
@@ -2275,6 +2692,7 @@ function resetStateForLoggedOut() {
   state.settings = { ...DEFAULT_SETTINGS };
   state.adminConfig = { ...DEFAULT_ADMIN_CONFIG };
   state.weeklyGoal = null;
+  state.answerTimerSeconds = DEFAULT_ANSWER_TIMER_SECONDS;
   state.session = null;
   state.auth.token = "";
   state.auth.role = "";
@@ -2546,6 +2964,7 @@ async function loadStateForRole() {
     state.history = [];
     state.mistakes = {};
     state.weeklyGoal = null;
+    state.answerTimerSeconds = DEFAULT_ANSWER_TIMER_SECONDS;
     const shared = await apiRequest("/api/admin/shared", { method: "GET" });
     if (!shared.ok) {
       await forceLogoutWithReason(shared.error || "Admin-Daten konnten nicht geladen werden.");
@@ -2624,6 +3043,14 @@ function applyStudentState(serverState) {
   }
   if (has(STORAGE_KEYS.weeklyGoal)) {
     state.weeklyGoal = serverState[STORAGE_KEYS.weeklyGoal] || null;
+  }
+  if (has(STORAGE_KEYS.answerTimer)) {
+    state.answerTimerSeconds = sanitizeAnswerTimerSeconds(
+      serverState[STORAGE_KEYS.answerTimer],
+      DEFAULT_ANSWER_TIMER_SECONDS
+    );
+  } else {
+    state.answerTimerSeconds = DEFAULT_ANSWER_TIMER_SECONDS;
   }
 }
 
@@ -3079,7 +3506,7 @@ function formatAdminHistoryOptions(entry) {
   return `Unit: ${unit} · Fokus: ${focus} · Fragen: ${size}`;
 }
 
-function showBigFeedback(text, ok) {
+function showBigFeedback(text, ok, durationMs = 900) {
   if (feedbackTimeoutId) {
     clearTimeout(feedbackTimeoutId);
   }
@@ -3089,7 +3516,7 @@ function showBigFeedback(text, ok) {
   el.bigFeedback.classList.remove("hidden");
   feedbackTimeoutId = setTimeout(() => {
     hideBigFeedback();
-  }, 900);
+  }, Math.max(0, Number(durationMs) || 0));
 }
 
 function hideBigFeedback() {

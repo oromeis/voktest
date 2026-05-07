@@ -231,6 +231,16 @@
               </div>
             </div>
 
+            <div id="questionTimerPanel" class="question-timer hidden" aria-hidden="true">
+              <div class="question-timer-head">
+                <span class="question-timer-label">Antwort-Zeit</span>
+                <span id="questionTimerText" class="question-timer-value">--</span>
+              </div>
+              <div class="question-timer-bar">
+                <span id="questionTimerBarFill"></span>
+              </div>
+            </div>
+
             <div class="question-card">
               <p id="questionLabel" class="question-label">Frage</p>
               <h2 id="questionText">Wechsle zu Start und beginne eine Runde.</h2>
@@ -429,6 +439,10 @@
                   Wochenziel (Minuten)
                   <input id="editProfileGoalInput" type="number" min="10" max="1200" step="5" />
                 </label>
+                <label>
+                  Antwort-Timer (Sekunden, 0 = aus)
+                  <input id="editProfileTimerInput" type="number" min="0" max="120" step="1" />
+                </label>
                 <div class="action-row">
                   <button id="saveProfileBtn" class="secondary-btn icon-btn" type="button" title="Profil speichern">
                     <span class="btn-icon" aria-hidden="true">💾</span>
@@ -442,6 +456,15 @@
                   >
                     <span class="btn-icon" aria-hidden="true">🎯</span>
                     <span>Ziel speichern</span>
+                  </button>
+                  <button
+                    id="saveProfileTimerBtn"
+                    class="ghost-btn icon-btn"
+                    type="button"
+                    title="Antwort-Timer speichern"
+                  >
+                    <span class="btn-icon" aria-hidden="true">⏱</span>
+                    <span>Timer speichern</span>
                   </button>
                   <button
                     id="viewProfileHistoryBtn"

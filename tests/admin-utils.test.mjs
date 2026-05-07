@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  DEFAULT_ANSWER_TIMER_SECONDS,
+  computeTimedAnswerPoints,
   computeRewardBonusPoints,
   createWeeklyGoal,
   formatDynamicPassword,
@@ -8,7 +10,8 @@ import {
   getWeekContext,
   getWeekKey,
   isDynamicPasswordValid,
-  pickWeeklyReward
+  pickWeeklyReward,
+  sanitizeAnswerTimerSeconds
 } from "../modules/admin-utils.js";
 
 test("dynamic password uses format weekday+MMHH", () => {
@@ -57,4 +60,29 @@ test("create weekly goal sets defaults and flags", () => {
 test("reward bonus points handles flat and double rewards", () => {
   assert.equal(computeRewardBonusPoints({ type: "flat", value: 500 }, 42), 500);
   assert.equal(computeRewardBonusPoints({ type: "double", value: 2 }, 42), 42);
+});
+
+test("answer timer seconds allow disabling and clamp active values", () => {
+  assert.equal(sanitizeAnswerTimerSeconds(0), 0);
+  assert.equal(sanitizeAnswerTimerSeconds(-5), 0);
+  assert.equal(sanitizeAnswerTimerSeconds(3), 5);
+  assert.equal(sanitizeAnswerTimerSeconds(150), 120);
+  assert.equal(sanitizeAnswerTimerSeconds("foo", DEFAULT_ANSWER_TIMER_SECONDS), 0);
+});
+
+test("timed answer points reward faster correct answers", () => {
+  const fast = computeTimedAnswerPoints(10, 2000, 20);
+  assert.equal(fast.active, true);
+  assert.equal(fast.basePoints, 10);
+  assert.equal(fast.speedBonusPoints, 7);
+  assert.equal(fast.totalPoints, 17);
+  assert.equal(fast.remainingRatio, 0.9);
+
+  const slow = computeTimedAnswerPoints(10, 19000, 20);
+  assert.equal(slow.totalPoints, 10);
+  assert.equal(slow.speedBonusPoints, 0);
+
+  const disabled = computeTimedAnswerPoints(10, 1000, 0);
+  assert.equal(disabled.active, false);
+  assert.equal(disabled.totalPoints, 10);
 });

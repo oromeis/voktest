@@ -9,6 +9,9 @@ const WEEKDAY_NAMES = [
 ];
 
 export const DEFAULT_TARGET_MINUTES = 120;
+export const DEFAULT_ANSWER_TIMER_SECONDS = 0;
+export const MIN_ANSWER_TIMER_SECONDS = 5;
+export const MAX_ANSWER_TIMER_SECONDS = 120;
 
 export const WEEKLY_REWARD_POOL = [
   { id: "flat_350", type: "flat", value: 350 },
@@ -137,6 +140,55 @@ export function sanitizeTargetMinutes(value, fallback = DEFAULT_TARGET_MINUTES) 
     return fallback;
   }
   return Math.max(10, Math.min(1200, Math.round(numeric)));
+}
+
+export function sanitizeAnswerTimerSeconds(value, fallback = DEFAULT_ANSWER_TIMER_SECONDS) {
+  const fallbackValue = Number.isFinite(Number(fallback))
+    ? Math.max(0, Math.round(Number(fallback)))
+    : DEFAULT_ANSWER_TIMER_SECONDS;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallbackValue;
+  }
+
+  const rounded = Math.round(numeric);
+  if (rounded <= 0) {
+    return 0;
+  }
+
+  return Math.max(MIN_ANSWER_TIMER_SECONDS, Math.min(MAX_ANSWER_TIMER_SECONDS, rounded));
+}
+
+export function computeTimedAnswerPoints(basePoints, elapsedMs, limitSeconds) {
+  const safeBasePoints = Math.max(0, Math.round(Number(basePoints) || 0));
+  const safeLimitSeconds = sanitizeAnswerTimerSeconds(limitSeconds, DEFAULT_ANSWER_TIMER_SECONDS);
+  if (!safeBasePoints || safeLimitSeconds <= 0) {
+    return {
+      active: false,
+      basePoints: safeBasePoints,
+      speedBonusPoints: 0,
+      totalPoints: safeBasePoints,
+      remainingMs: 0,
+      remainingRatio: 0,
+      limitSeconds: safeLimitSeconds
+    };
+  }
+
+  const limitMs = safeLimitSeconds * 1000;
+  const safeElapsedMs = Math.max(0, Math.min(limitMs, Math.round(Number(elapsedMs) || 0)));
+  const remainingMs = Math.max(0, limitMs - safeElapsedMs);
+  const remainingRatio = remainingMs / limitMs;
+  const speedBonusPoints = Math.max(0, Math.round(safeBasePoints * 0.8 * remainingRatio));
+
+  return {
+    active: true,
+    basePoints: safeBasePoints,
+    speedBonusPoints,
+    totalPoints: safeBasePoints + speedBonusPoints,
+    remainingMs,
+    remainingRatio,
+    limitSeconds: safeLimitSeconds
+  };
 }
 
 export function computeRewardBonusPoints(rewardDefinition, roundPoints) {

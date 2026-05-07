@@ -6,11 +6,13 @@ import crypto from "node:crypto";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_ANSWER_TIMER_SECONDS,
   DEFAULT_TARGET_MINUTES,
   createWeeklyGoal,
   getWeekContext,
   isDateWithinRange,
   isDynamicPasswordValid,
+  sanitizeAnswerTimerSeconds,
   sanitizeTargetMinutes
 } from "./modules/admin-utils.js";
 import {
@@ -42,7 +44,8 @@ const STORAGE_KEYS = {
   customConjugations: "voktest_custom_conjugations_v1",
   settings: "voktest_settings_v1",
   admin: "voktest_admin_v1",
-  weeklyGoal: "voktest_weekly_goal_v1"
+  weeklyGoal: "voktest_weekly_goal_v1",
+  answerTimer: "voktest_answer_timer_v1"
 };
 
 const LEGACY_STATE_KEYS = Object.values(STORAGE_KEYS);
@@ -68,7 +71,8 @@ function createLegacyEmptyState() {
     [STORAGE_KEYS.customConjugations]: [],
     [STORAGE_KEYS.settings]: {},
     [STORAGE_KEYS.admin]: {},
-    [STORAGE_KEYS.weeklyGoal]: null
+    [STORAGE_KEYS.weeklyGoal]: null,
+    [STORAGE_KEYS.answerTimer]: DEFAULT_ANSWER_TIMER_SECONDS
   };
 }
 
@@ -77,7 +81,8 @@ function createEmptyUserData() {
     [STORAGE_KEYS.history]: [],
     [STORAGE_KEYS.mistakes]: {},
     [STORAGE_KEYS.settings]: {},
-    [STORAGE_KEYS.weeklyGoal]: null
+    [STORAGE_KEYS.weeklyGoal]: null,
+    [STORAGE_KEYS.answerTimer]: DEFAULT_ANSWER_TIMER_SECONDS
   };
 }
 
@@ -333,7 +338,11 @@ function sanitizeUserData(input) {
     [STORAGE_KEYS.history]: sanitizeHistory(value[STORAGE_KEYS.history]),
     [STORAGE_KEYS.mistakes]: sanitizeMistakes(value[STORAGE_KEYS.mistakes]),
     [STORAGE_KEYS.settings]: sanitizeSettings(value[STORAGE_KEYS.settings]),
-    [STORAGE_KEYS.weeklyGoal]: sanitizeWeeklyGoal(value[STORAGE_KEYS.weeklyGoal])
+    [STORAGE_KEYS.weeklyGoal]: sanitizeWeeklyGoal(value[STORAGE_KEYS.weeklyGoal]),
+    [STORAGE_KEYS.answerTimer]: sanitizeAnswerTimerSeconds(
+      value[STORAGE_KEYS.answerTimer],
+      DEFAULT_ANSWER_TIMER_SECONDS
+    )
   };
 }
 
@@ -819,6 +828,14 @@ function getProfileKpi(v2State, profileId) {
   };
 }
 
+function getProfileAnswerTimerSeconds(v2State, profileId) {
+  const userData = v2State.userDataById[profileId] || createEmptyUserData();
+  return sanitizeAnswerTimerSeconds(
+    userData[STORAGE_KEYS.answerTimer],
+    DEFAULT_ANSWER_TIMER_SECONDS
+  );
+}
+
 function buildStudentStateResponse(v2State, profileId) {
   const userData = v2State.userDataById[profileId] || createEmptyUserData();
   return {
@@ -826,18 +843,26 @@ function buildStudentStateResponse(v2State, profileId) {
     [STORAGE_KEYS.mistakes]: userData[STORAGE_KEYS.mistakes],
     [STORAGE_KEYS.settings]: userData[STORAGE_KEYS.settings],
     [STORAGE_KEYS.weeklyGoal]: userData[STORAGE_KEYS.weeklyGoal],
+    [STORAGE_KEYS.answerTimer]: sanitizeAnswerTimerSeconds(
+      userData[STORAGE_KEYS.answerTimer],
+      DEFAULT_ANSWER_TIMER_SECONDS
+    ),
     [STORAGE_KEYS.customVocabulary]: v2State.shared.customVocabulary,
     [STORAGE_KEYS.customConjugations]: v2State.shared.customConjugations
   };
 }
 
-function buildPublicProfile(profile, kpi) {
+function buildPublicProfile(profile, kpi, answerTimerSeconds = DEFAULT_ANSWER_TIMER_SECONDS) {
   return {
     id: profile.id,
     name: profile.name,
     active: profile.active !== false,
     pinSet: profile.pinSet !== false,
     schoolGrade: sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE),
+    answerTimerSeconds: sanitizeAnswerTimerSeconds(
+      answerTimerSeconds,
+      DEFAULT_ANSWER_TIMER_SECONDS
+    ),
     kpi
   };
 }
@@ -1386,7 +1411,13 @@ export async function createRuntime({
         const profiles = state.auth.profiles
           .slice()
           .sort((a, b) => a.name.localeCompare(b.name, "de", { sensitivity: "base" }))
-          .map((profile) => buildPublicProfile(profile, getProfileKpi(state, profile.id)));
+          .map((profile) =>
+            buildPublicProfile(
+              profile,
+              getProfileKpi(state, profile.id),
+              getProfileAnswerTimerSeconds(state, profile.id)
+            )
+          );
         sendJson(response, 200, { ok: true, profiles });
         return;
       }
@@ -1427,7 +1458,11 @@ export async function createRuntime({
 
           sendJson(response, 201, {
             ok: true,
-            profile: buildPublicProfile(profile, getProfileKpi(state, profile.id))
+            profile: buildPublicProfile(
+              profile,
+              getProfileKpi(state, profile.id),
+              getProfileAnswerTimerSeconds(state, profile.id)
+            )
           });
         } catch (error) {
           if (error.message === "payload_too_large") {
@@ -1466,7 +1501,11 @@ export async function createRuntime({
 
       sendJson(response, 200, {
         ok: true,
-        profile: buildPublicProfile(profile, getProfileKpi(state, profile.id))
+        profile: buildPublicProfile(
+          profile,
+          getProfileKpi(state, profile.id),
+          getProfileAnswerTimerSeconds(state, profile.id)
+        )
       });
       return;
     }
@@ -1485,14 +1524,62 @@ export async function createRuntime({
         return;
       }
 
-      state.userDataById[profile.id] = sanitizeUserData(createEmptyUserData());
+      const currentUserData = ensureUserDataById(profile.id);
+      state.userDataById[profile.id] = sanitizeUserData({
+        ...createEmptyUserData(),
+        [STORAGE_KEYS.answerTimer]: currentUserData[STORAGE_KEYS.answerTimer]
+      });
       invalidateProfileSessions(profile.id);
       await persistState();
 
       sendJson(response, 200, {
         ok: true,
-        profile: buildPublicProfile(profile, getProfileKpi(state, profile.id))
+        profile: buildPublicProfile(
+          profile,
+          getProfileKpi(state, profile.id),
+          getProfileAnswerTimerSeconds(state, profile.id)
+        )
       });
+      return;
+    }
+
+    const timerMatch = pathname.match(/^\/api\/admin\/profiles\/([^/]+)\/timer$/);
+    if (timerMatch) {
+      if (request.method !== "PUT") {
+        sendJson(response, 405, { ok: false, error: "method_not_allowed" });
+        return;
+      }
+
+      try {
+        const profileId = sanitizeId(decodeURIComponent(timerMatch[1]));
+        const profile = getProfileById(profileId);
+        if (!profile) {
+          sendJson(response, 404, { ok: false, error: "profile_not_found" });
+          return;
+        }
+
+        const rawBody = await readRequestBody(request);
+        const payload = rawBody ? JSON.parse(rawBody) : {};
+        const answerTimerSeconds = sanitizeAnswerTimerSeconds(
+          payload.answerTimerSeconds,
+          DEFAULT_ANSWER_TIMER_SECONDS
+        );
+
+        const userData = ensureUserDataById(profile.id);
+        userData[STORAGE_KEYS.answerTimer] = answerTimerSeconds;
+        state.userDataById[profile.id] = sanitizeUserData(userData);
+        await persistState();
+        sendJson(response, 200, {
+          ok: true,
+          answerTimerSeconds
+        });
+      } catch (error) {
+        if (error.message === "payload_too_large") {
+          sendJson(response, 413, { ok: false, error: "payload_too_large" });
+          return;
+        }
+        sendJson(response, 400, { ok: false, error: "invalid_payload" });
+      }
       return;
     }
 
@@ -1514,7 +1601,11 @@ export async function createRuntime({
       const history = sanitizeHistory(userData[STORAGE_KEYS.history]).slice(0, 120);
       sendJson(response, 200, {
         ok: true,
-        profile: buildPublicProfile(profile, getProfileKpi(state, profile.id)),
+        profile: buildPublicProfile(
+          profile,
+          getProfileKpi(state, profile.id),
+          getProfileAnswerTimerSeconds(state, profile.id)
+        ),
         history
       });
       return;
@@ -1567,8 +1658,8 @@ export async function createRuntime({
 
         userData[STORAGE_KEYS.weeklyGoal] = sanitizeWeeklyGoal(weeklyGoal);
         state.userDataById[profile.id] = sanitizeUserData(userData);
-        await persistState();
-        sendJson(response, 200, { ok: true, goal: userData[STORAGE_KEYS.weeklyGoal] });
+      await persistState();
+      sendJson(response, 200, { ok: true, goal: userData[STORAGE_KEYS.weeklyGoal] });
       } catch (error) {
         if (error.message === "payload_too_large") {
           sendJson(response, 413, { ok: false, error: "payload_too_large" });
@@ -1634,7 +1725,11 @@ export async function createRuntime({
       await persistState();
       sendJson(response, 200, {
         ok: true,
-        profile: buildPublicProfile(profile, getProfileKpi(state, profile.id))
+        profile: buildPublicProfile(
+          profile,
+          getProfileKpi(state, profile.id),
+          getProfileAnswerTimerSeconds(state, profile.id)
+        )
       });
     } catch (error) {
       if (error.message === "payload_too_large") {
