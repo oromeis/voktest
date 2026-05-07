@@ -761,6 +761,8 @@ select + .action-row:not(.mt-10) {
 }
 
 .admin-profile-item {
+  display: grid;
+  gap: 8px;
   width: 100%;
   text-align: left;
   border: 1px solid var(--border);
@@ -789,6 +791,68 @@ select + .action-row:not(.mt-10) {
 
 .admin-profile-item p {
   margin: 0;
+}
+
+.admin-profile-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-profile-meta {
+  color: var(--ink-soft);
+  font-size: 0.96rem;
+}
+
+.admin-profile-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-profile-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.88rem;
+  line-height: 1.1;
+}
+
+.admin-profile-pill.level {
+  background: #ffe4bd;
+  border-color: #f2c786;
+  color: #7a4e13;
+}
+
+.admin-profile-pill.title {
+  background: #dff1f8;
+  border-color: #aad0df;
+  color: #1c5c74;
+}
+
+.admin-profile-pill.week {
+  background: #edf5f8;
+  border-color: #cadde6;
+  color: #456476;
+}
+
+.admin-profile-item.active .admin-profile-pill.level {
+  background: #ffd69a;
+}
+
+.admin-profile-item.active .admin-profile-pill.title {
+  background: #2b7a99;
+  border-color: #2b7a99;
+  color: #f8feff;
+}
+
+.admin-profile-item.active .admin-profile-pill.week {
+  background: #f6fbfd;
 }
 
 .admin-head {

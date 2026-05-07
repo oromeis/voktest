@@ -1781,16 +1781,26 @@ function renderAdminState() {
       const isActive = profile.id === state.auth.selectedProfileId;
       const weekUsed = Number(profile?.kpi?.weekUsedMinutes) || 0;
       const weekTarget = Number(profile?.kpi?.weekTargetMinutes) || 0;
+      const totalXp = Number(profile?.kpi?.totalXp) || 0;
+      const levelInfo = getLevelInfo(totalXp);
+      const levelTitle = getLevelTitle(levelInfo.level);
       const pinStatus = profile.pinSet === false ? "PIN offen" : "PIN gesetzt";
       const schoolGrade = sanitizeSchoolGrade(profile.schoolGrade, DEFAULT_SCHOOL_GRADE);
+      const statusSuffix = profile.active ? "" : " · (deaktiviert)";
       const button = document.createElement("button");
       button.type = "button";
       button.className = `admin-profile-item ${isActive ? "active" : ""}`;
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
       button.innerHTML = `
-        <p class="recent-head">${profile.name} · Klasse ${schoolGrade} ${profile.active ? "" : "· (deaktiviert)"}</p>
-        <p>Runden: ${Number(profile?.kpi?.rounds) || 0} · XP gesamt: ${Number(profile?.kpi?.totalXp) || 0} · ${pinStatus}</p>
-        <p class="recent-sub">Woche: ${weekUsed}/${weekTarget} Min</p>
+        <div class="admin-profile-top">
+          <p class="recent-head">${profile.name} · Klasse ${schoolGrade}${statusSuffix}</p>
+        </div>
+        <p class="admin-profile-meta">Runden: ${Number(profile?.kpi?.rounds) || 0} · XP gesamt: ${totalXp} · ${pinStatus}</p>
+        <div class="admin-profile-strip">
+          <span class="admin-profile-pill level">Level ${levelInfo.level}</span>
+          <span class="admin-profile-pill title">${levelTitle}</span>
+          <span class="admin-profile-pill week">Woche ${weekUsed}/${weekTarget} Min</span>
+        </div>
       `;
       button.addEventListener("click", () => {
         setSelectedAdminProfile(profile.id);
