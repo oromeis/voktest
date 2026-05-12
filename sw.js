@@ -1,22 +1,41 @@
-const CACHE_NAME = "voktest-v26";
+const CACHE_NAME = "voktest-v27";
+const APP_SCOPE_URL = new URL(self.registration.scope);
+const APP_SCOPE_PATH = normalizeScopePath(APP_SCOPE_URL.pathname);
+const APP_INDEX_URL = new URL("index.html", APP_SCOPE_URL).toString();
 const ASSETS = [
   "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
-  "./modules/common.js",
-  "./modules/catalog-utils.js",
-  "./modules/admin-utils.js",
-  "./modules/history-module.js",
-  "./modules/import-module.js",
-  "./data/vocabulary.js",
-  "./data/vocabulary-fr6.js",
-  "./data/vocabulary-la6.js",
-  "./data/conjugations.js",
-  "./assets/language-king-banner.png",
-  "./manifest.webmanifest",
-  "./icons/icon.svg"
-];
+  "index.html",
+  "styles.css",
+  "app.js",
+  "modules/common.js",
+  "modules/catalog-utils.js",
+  "modules/admin-utils.js",
+  "modules/history-module.js",
+  "modules/import-module.js",
+  "data/vocabulary.js",
+  "data/vocabulary-fr6.js",
+  "data/vocabulary-la6.js",
+  "data/conjugations.js",
+  "assets/language-king-banner.png",
+  "manifest.webmanifest",
+  "icons/icon.svg"
+].map((path) => new URL(path, APP_SCOPE_URL).toString());
+
+function normalizeScopePath(pathname) {
+  const raw = typeof pathname === "string" && pathname.trim() ? pathname.trim() : "/";
+  const withLeadingSlash = raw.startsWith("/") ? raw : `/${raw}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
+}
+
+function getScopeRelativePath(url) {
+  if (url.origin !== self.location.origin) {
+    return null;
+  }
+  if (!url.pathname.startsWith(APP_SCOPE_PATH)) {
+    return null;
+  }
+  return url.pathname.slice(APP_SCOPE_PATH.length);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -45,7 +64,8 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
   const sameOrigin = url.origin === self.location.origin;
-  const isApiRequest = sameOrigin && url.pathname.startsWith("/api/");
+  const scopeRelativePath = sameOrigin ? getScopeRelativePath(url) : null;
+  const isApiRequest = scopeRelativePath !== null && scopeRelativePath.startsWith("api/");
 
   if (isApiRequest) {
     event.respondWith(fetch(event.request));
@@ -53,12 +73,15 @@ self.addEventListener("fetch", (event) => {
   }
 
   const isAppShell =
-    sameOrigin &&
-    (url.pathname.endsWith("/") ||
-      url.pathname.endsWith(".html") ||
-      url.pathname.endsWith(".js") ||
-      url.pathname.endsWith(".css") ||
-      url.pathname.endsWith(".webmanifest"));
+    scopeRelativePath !== null &&
+    (
+      scopeRelativePath === "" ||
+      scopeRelativePath.endsWith("/") ||
+      scopeRelativePath.endsWith(".html") ||
+      scopeRelativePath.endsWith(".js") ||
+      scopeRelativePath.endsWith(".css") ||
+      scopeRelativePath.endsWith(".webmanifest")
+    );
 
   if (isAppShell) {
     event.respondWith(
@@ -73,7 +96,7 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() =>
-          caches.match(event.request).then((cached) => cached || caches.match("./index.html"))
+          caches.match(event.request).then((cached) => cached || caches.match(APP_INDEX_URL))
         )
     );
     return;

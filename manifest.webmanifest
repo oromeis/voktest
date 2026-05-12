@@ -3,6 +3,7 @@
   "short_name": "VokTest",
   "description": "Vokabeltraining, Testmodus, Fehleranalyse und Benotung für Klasse 6.",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0b2533",
   "theme_color": "#124559",

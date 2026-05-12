@@ -217,6 +217,9 @@ const remoteSync = {
   status: "Nicht angemeldet."
 };
 
+const APP_BASE_URL = resolveAppBaseUrl();
+const APP_SCOPE_PATH = normalizeAppPathname(APP_BASE_URL.pathname);
+
 const ADMIN_SECTIONS = ["profiles", "new", "security"];
 
 const state = {
@@ -729,6 +732,42 @@ function sanitizeAdminSection(value) {
 
 function sanitizeMode(value) {
   return SUPPORTED_MODES.includes(value) ? value : "learn";
+}
+
+function resolveAppBaseUrl() {
+  const configured = document.querySelector('meta[name="voktest-base-path"]')?.content?.trim();
+  try {
+    if (configured) {
+      return new URL(configured, document.baseURI || window.location.href);
+    }
+    const currentUrl = new URL(window.location.href);
+    const pathname = currentUrl.pathname || "/";
+    const looksLikeFile = /\.[a-z0-9]+$/i.test(pathname);
+    if (pathname.endsWith("/") || looksLikeFile) {
+      return new URL("./", currentUrl);
+    }
+    return new URL(`${pathname}/`, currentUrl.origin);
+  } catch {
+    return new URL("./", window.location.href);
+  }
+}
+
+function normalizeAppPathname(pathname) {
+  const raw = typeof pathname === "string" && pathname.trim() ? pathname.trim() : "/";
+  const withLeadingSlash = raw.startsWith("/") ? raw : `/${raw}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
+}
+
+function buildAppUrl(path = "") {
+  const safePath = String(path || "").replace(/^\/+/, "");
+  return new URL(safePath, APP_BASE_URL).toString();
+}
+
+function buildApiUrl(path = "") {
+  const safePath = String(path || "")
+    .replace(/^\/+/, "")
+    .replace(/^api\/+/, "");
+  return buildAppUrl(`api/${safePath}`);
 }
 
 function sanitizeConjugationTenseSetting(value) {
@@ -2890,7 +2929,7 @@ function showLoggedOutState() {
 
 async function loadLoginProfiles() {
   try {
-    const response = await fetch("/api/auth/profiles", {
+    const response = await fetch(buildApiUrl("auth/profiles"), {
       method: "GET",
       headers: { Accept: "application/json" }
     });
@@ -3362,7 +3401,13 @@ async function apiRequest(path, options = {}, requireAuth = true) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(path, {
+    const rawPath = String(path || "");
+    const requestUrl = /^https?:\/\//i.test(rawPath)
+      ? rawPath
+      : rawPath.startsWith("/api/") || rawPath === "/api"
+        ? buildApiUrl(rawPath.replace(/^\/api\/?/, ""))
+        : buildAppUrl(rawPath);
+    const response = await fetch(requestUrl, {
       method: options.method || "GET",
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -3414,7 +3459,7 @@ async function hydrateVersionInfo() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch("/api/version", {
+    const response = await fetch(buildApiUrl("version"), {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: controller.signal
@@ -3757,7 +3802,9 @@ function registerServiceWorker() {
 
   window.addEventListener("load", async () => {
     try {
-      await navigator.serviceWorker.register("./sw.js");
+      await navigator.serviceWorker.register(buildAppUrl("sw.js"), {
+        scope: APP_SCOPE_PATH
+      });
     } catch {
       // Offline support is optional.
     }
