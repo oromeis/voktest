@@ -1997,6 +1997,9 @@ function normalizeHistoryEntries() {
     const safe = { ...(entry || {}) };
     const fallbackDirection =
       safe.direction === "de-en" || safe.direction === "conjugation" ? safe.direction : "en-de";
+    const fallbackConjugationTense = safe.conjugationTense === MIXED_CONJUGATION_TENSE
+      ? MIXED_CONJUGATION_TENSE
+      : sanitizeConjugationTense(safe.conjugationTense, DEFAULT_CONJUGATION_TENSE);
     const total = Math.max(0, Number(safe.total) || 0);
     const normalizedSize = Math.max(
       1,
@@ -2010,6 +2013,7 @@ function normalizeHistoryEntries() {
       direction: fallbackDirection,
       mode: sanitizeMode(safe.mode),
       language: sanitizeLanguageCode(safe.language, DEFAULT_LANGUAGE),
+      conjugationTense: fallbackConjugationTense,
       unit: normalizedUnit,
       focus: safe.focus === "mistakes" ? "mistakes" : "all",
       size: normalizedSize,
@@ -2031,6 +2035,7 @@ function normalizeHistoryEntries() {
       next.direction !== safe.direction ||
       next.mode !== safe.mode ||
       next.language !== safe.language ||
+      next.conjugationTense !== safe.conjugationTense ||
       next.unit !== safe.unit ||
       next.focus !== safe.focus ||
       next.size !== safe.size ||
@@ -2810,6 +2815,10 @@ function normalizeAdminHistoryRun(entry) {
         ? source.direction
         : "en-de",
     language: sanitizeLanguageCode(source.language, DEFAULT_LANGUAGE),
+    conjugationTense:
+      source.conjugationTense === MIXED_CONJUGATION_TENSE
+        ? MIXED_CONJUGATION_TENSE
+        : sanitizeConjugationTense(source.conjugationTense, DEFAULT_CONJUGATION_TENSE),
     unit: typeof source.unit === "string" && source.unit.trim() ? source.unit.trim().slice(0, 80) : "all",
     focus: source.focus === "mistakes" ? "mistakes" : "all",
     size: Math.max(1, Math.min(50, Math.round(Number(source.size) || total || 15))),
@@ -3664,7 +3673,17 @@ function formatAdminHistoryOptions(entry) {
       ? "Alle Verben"
       : "Alle Vokabeln";
   const size = Math.max(1, Math.round(Number(entry?.size) || Number(entry?.total) || 15));
-  return `Unit: ${unit} · Fokus: ${focus} · Fragen: ${size}`;
+  const conjugationTense = entry?.mode === "conjugation"
+    ? ` · Zeitform: ${formatHistoryConjugationTenseLabel(entry?.conjugationTense)}`
+    : "";
+  return `Unit: ${unit} · Fokus: ${focus}${conjugationTense} · Fragen: ${size}`;
+}
+
+function formatHistoryConjugationTenseLabel(value) {
+  if (value === MIXED_CONJUGATION_TENSE) {
+    return "Gemischt";
+  }
+  return getConjugationTenseLabel(value, DEFAULT_CONJUGATION_TENSE);
 }
 
 function showBigFeedback(text, ok, durationMs = 900) {

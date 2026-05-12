@@ -1,7 +1,10 @@
 import { gradeFromPercent, gradeLabel, labelMode } from "./common.js";
 import {
+  DEFAULT_CONJUGATION_TENSE,
   DEFAULT_LANGUAGE,
+  getConjugationTenseLabel,
   getLanguageDefinition,
+  sanitizeConjugationTense,
   sanitizeLanguageCode
 } from "./catalog-utils.js";
 
@@ -16,8 +19,12 @@ export function createHistoryModule({ state, elements, persistHistory }) {
     const entry = {
       date: new Date().toISOString(),
       mode: session.mode,
-      direction: session.direction === "de-en" ? "de-en" : "en-de",
+      direction:
+        session.direction === "de-en" || session.direction === "conjugation"
+          ? session.direction
+          : "en-de",
       language: sanitizeLanguageCode(session.language, DEFAULT_LANGUAGE),
+      conjugationTense: normalizeHistoryConjugationTense(session.conjugationTense),
       unit: normalizeRunUnit(session.unit),
       focus: session.focus === "mistakes" ? "mistakes" : "all",
       size: Math.max(1, Math.min(50, Math.round(Number(session.size) || total || 15))),
@@ -184,6 +191,7 @@ function normalizeHistoryForView(history) {
           : "test",
       direction: typeof source.direction === "string" ? source.direction : "en-de",
       language: sanitizeLanguageCode(source.language, DEFAULT_LANGUAGE),
+      conjugationTense: normalizeHistoryConjugationTense(source.conjugationTense),
       unit: normalizeRunUnit(source.unit),
       focus: source.focus === "mistakes" ? "mistakes" : "all",
       size: normalizeRunSize(source.size, total),
@@ -203,6 +211,7 @@ function normalizeHistoryForView(history) {
       normalized.mode !== source.mode ||
       normalized.direction !== source.direction ||
       normalized.language !== source.language ||
+      normalized.conjugationTense !== source.conjugationTense ||
       normalized.unit !== source.unit ||
       normalized.focus !== source.focus ||
       normalized.size !== source.size ||
@@ -274,7 +283,24 @@ function formatRunOptions(run) {
       ? "Alle Verben"
       : "Alle Vokabeln";
   const size = Math.max(1, Math.round(Number(run?.size) || Number(run?.total) || 15));
-  return `Unit: ${unit} · Fokus: ${focus} · Fragen: ${size}`;
+  const conjugationTense = run?.mode === "conjugation"
+    ? ` · Zeitform: ${formatHistoryConjugationTenseLabel(run?.conjugationTense)}`
+    : "";
+  return `Unit: ${unit} · Fokus: ${focus}${conjugationTense} · Fragen: ${size}`;
+}
+
+function normalizeHistoryConjugationTense(value) {
+  if (value === "mixed") {
+    return "mixed";
+  }
+  return sanitizeConjugationTense(value, DEFAULT_CONJUGATION_TENSE);
+}
+
+function formatHistoryConjugationTenseLabel(value) {
+  if (value === "mixed") {
+    return "Gemischt";
+  }
+  return getConjugationTenseLabel(value, DEFAULT_CONJUGATION_TENSE);
 }
 
 function normalizeRunUnit(value) {

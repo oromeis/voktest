@@ -369,6 +369,7 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
             mode: "conjugation",
             direction: "conjugation",
             language: "la",
+            conjugationTense: "mixed",
             unit: "Unit L1",
             focus: "mistakes",
             size: 12,
@@ -399,6 +400,7 @@ test("admin can manage profiles and shared vocabulary, student sees shared pool"
     assert.equal(adminProfileHistory.payload.history[0].language, "la");
     assert.equal(adminProfileHistory.payload.history[0].mode, "conjugation");
     assert.equal(adminProfileHistory.payload.history[0].direction, "conjugation");
+    assert.equal(adminProfileHistory.payload.history[0].conjugationTense, "mixed");
     assert.equal(adminProfileHistory.payload.history[0].unit, "Unit L1");
     assert.equal(adminProfileHistory.payload.history[0].focus, "mistakes");
     assert.equal(adminProfileHistory.payload.history[0].size, 12);

@@ -206,6 +206,9 @@ function sanitizeHistoryEntry(entry) {
       ? value.direction
       : "en-de";
   const language = sanitizeLanguageCode(value.language, DEFAULT_LANGUAGE);
+  const conjugationTense = value.conjugationTense === "mixed"
+    ? "mixed"
+    : sanitizeConjugationTense(value.conjugationTense, DEFAULT_CONJUGATION_TENSE);
   const unitRaw = typeof value.unit === "string" ? value.unit.trim() : "";
   const unit = unitRaw ? unitRaw.slice(0, 80) : "all";
   const focus = value.focus === "mistakes" ? "mistakes" : "all";
@@ -222,6 +225,7 @@ function sanitizeHistoryEntry(entry) {
         : "test",
     direction,
     language,
+    conjugationTense,
     unit,
     focus,
     size,
