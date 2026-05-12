@@ -5,10 +5,13 @@ import {
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
   getConjugationLanguagesForGrade,
+  getConjugationTenseLabel,
   getLanguageDefinition,
   getLanguagesForGrade,
+  getSupportedConjugationTenses,
   normalizeConjugationEntry,
   normalizeVocabularyEntry,
+  sanitizeConjugationTense,
   sanitizeLanguageCode,
   sanitizeSchoolGrade
 } from "../modules/catalog-utils.js";
@@ -91,6 +94,14 @@ test("normalizeConjugationEntry validates canonical forms with 6 persons", () =>
   assert.deepEqual(Object.keys(entry.forms), CONJUGATION_PERSON_KEYS);
 });
 
+test("conjugation tense helpers support present, perfect and future", () => {
+  assert.deepEqual(getSupportedConjugationTenses(), ["present", "perfect", "future"]);
+  assert.equal(sanitizeConjugationTense("perfect", "present"), "perfect");
+  assert.equal(sanitizeConjugationTense("future", "present"), "future");
+  assert.equal(sanitizeConjugationTense("unknown", "perfect"), "perfect");
+  assert.equal(getConjugationTenseLabel("future"), "Futur");
+});
+
 test("normalizeConjugationEntry rejects missing person forms", () => {
   const entry = normalizeConjugationEntry({
     lemma: "amare",
@@ -98,6 +109,23 @@ test("normalizeConjugationEntry rejects missing person forms", () => {
     forms: {
       "1sg": "amo",
       "2sg": "amas"
+    }
+  });
+  assert.equal(entry, null);
+});
+
+test("normalizeConjugationEntry rejects unsupported tense values", () => {
+  const entry = normalizeConjugationEntry({
+    lemma: "amare",
+    german: "lieben",
+    tense: "imperfect",
+    forms: {
+      "1sg": "amabam",
+      "2sg": "amabas",
+      "3sg": "amabat",
+      "1pl": "amabamus",
+      "2pl": "amabatis",
+      "3pl": "amabant"
     }
   });
   assert.equal(entry, null);

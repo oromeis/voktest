@@ -4,6 +4,21 @@ export const DEFAULT_SCHOOL_GRADE = 6;
 export const DEFAULT_LANGUAGE = "en";
 export const DEFAULT_CONJUGATION_TENSE = "present";
 export const CONJUGATION_PERSON_KEYS = ["1sg", "2sg", "3sg", "1pl", "2pl", "3pl"];
+export const SUPPORTED_CONJUGATION_TENSES = ["present", "perfect", "future"];
+export const CONJUGATION_TENSE_DEFINITIONS = {
+  present: {
+    code: "present",
+    label: "Präsens"
+  },
+  perfect: {
+    code: "perfect",
+    label: "Perfekt"
+  },
+  future: {
+    code: "future",
+    label: "Futur"
+  }
+};
 
 export const LANGUAGE_DEFINITIONS = {
   en: {
@@ -30,6 +45,10 @@ export function getSupportedLanguages() {
   return Object.keys(LANGUAGE_DEFINITIONS);
 }
 
+export function getSupportedConjugationTenses() {
+  return [...SUPPORTED_CONJUGATION_TENSES];
+}
+
 export function getLanguageDefinition(languageCode, fallbackCode = DEFAULT_LANGUAGE) {
   if (typeof languageCode === "string") {
     const normalized = languageCode.trim().toLowerCase();
@@ -38,6 +57,26 @@ export function getLanguageDefinition(languageCode, fallbackCode = DEFAULT_LANGU
     }
   }
   return LANGUAGE_DEFINITIONS[fallbackCode] || LANGUAGE_DEFINITIONS[DEFAULT_LANGUAGE];
+}
+
+export function getConjugationTenseDefinition(
+  tenseCode,
+  fallbackCode = DEFAULT_CONJUGATION_TENSE
+) {
+  const fallback = isSupportedConjugationTense(fallbackCode)
+    ? fallbackCode
+    : DEFAULT_CONJUGATION_TENSE;
+  if (typeof tenseCode === "string") {
+    const normalized = tenseCode.trim().toLowerCase();
+    if (CONJUGATION_TENSE_DEFINITIONS[normalized]) {
+      return CONJUGATION_TENSE_DEFINITIONS[normalized];
+    }
+  }
+  return CONJUGATION_TENSE_DEFINITIONS[fallback];
+}
+
+export function getConjugationTenseLabel(tenseCode, fallbackCode = DEFAULT_CONJUGATION_TENSE) {
+  return getConjugationTenseDefinition(tenseCode, fallbackCode).label;
 }
 
 export function sanitizeLanguageCode(value, fallback = DEFAULT_LANGUAGE) {
@@ -54,6 +93,10 @@ export function sanitizeLanguageCode(value, fallback = DEFAULT_LANGUAGE) {
     return fallbackDefinition.code;
   }
   return normalized;
+}
+
+export function isSupportedConjugationTense(value) {
+  return SUPPORTED_CONJUGATION_TENSES.includes(String(value || "").trim().toLowerCase());
 }
 
 export function sanitizeSchoolGrade(value, fallback = DEFAULT_SCHOOL_GRADE) {
@@ -159,7 +202,11 @@ export function normalizeConjugationEntry(value, options = {}) {
 
   const language = sanitizeLanguageCode(value.language, fallbackLanguage);
   const schoolGrade = sanitizeSchoolGrade(value.schoolGrade, fallbackSchoolGrade);
-  const tense = sanitizeConjugationTense(value.tense, DEFAULT_CONJUGATION_TENSE);
+  const rawTense = typeof value.tense === "string" ? value.tense.trim().toLowerCase() : "";
+  if (rawTense && !isSupportedConjugationTense(rawTense)) {
+    return null;
+  }
+  const tense = sanitizeConjugationTense(rawTense, DEFAULT_CONJUGATION_TENSE);
   const unit = sanitizeText(value.unit, "", 80);
 
   const formsSource = value.forms && typeof value.forms === "object" ? value.forms : value;
@@ -244,12 +291,12 @@ function sanitizePage(value) {
   return "";
 }
 
-function sanitizeConjugationTense(value, fallback = DEFAULT_CONJUGATION_TENSE) {
+export function sanitizeConjugationTense(value, fallback = DEFAULT_CONJUGATION_TENSE) {
   const text = typeof value === "string" ? value.trim().toLowerCase() : "";
-  if (text === "present") {
-    return "present";
+  if (isSupportedConjugationTense(text)) {
+    return text;
   }
-  return fallback;
+  return isSupportedConjugationTense(fallback) ? fallback : DEFAULT_CONJUGATION_TENSE;
 }
 
 function clampGrade(value) {

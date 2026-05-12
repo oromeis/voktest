@@ -4,7 +4,7 @@ Diese Starterdaten wurden als **frei nutzbares, didaktisches Übungsset** für V
 
 ## Herkunft / Lizenzhinweis
 
-- Die enthaltenen Formen wurden aus allgemeinen, frei vermittelbaren Grammatikregeln (Präsens) generiert und manuell ergänzt.
+- Die enthaltenen Formen wurden aus allgemeinen, frei vermittelbaren Grammatikregeln für Präsens, Perfekt und Futur generiert und bei Sonderfällen manuell ergänzt.
 - Es wurden keine urheberrechtlich geschützten Schulbuchtabellen 1:1 übernommen.
 - Das Datenset im Projekt dient als eigene, technische Starterbasis für Übungen und kann per Admin-Import erweitert/ersetzt werden.
 
@@ -12,7 +12,10 @@ Diese Starterdaten wurden als **frei nutzbares, didaktisches Übungsset** für V
 
 - Sprachen: Englisch (`en`), Französisch (`fr`), Latein (`la`)
 - Klassenfokus v1: Klasse 6
-- Tempus v1: Präsens (`present`)
+- Zeitformen v2:
+  - Präsens (`present`)
+  - Perfekt (`perfect`)
+  - Futur (`future`)
 - Jede Zeile enthält alle 6 Personen (`1sg`, `2sg`, `3sg`, `1pl`, `2pl`, `3pl`).
 
 ## Hinweis

@@ -16,10 +16,12 @@ import {
   sanitizeTargetMinutes
 } from "./modules/admin-utils.js";
 import {
+  DEFAULT_CONJUGATION_TENSE,
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
   normalizeConjugationEntry,
   normalizeVocabularyEntry,
+  sanitizeConjugationTense,
   sanitizeLanguageCode,
   sanitizeSchoolGrade
 } from "./modules/catalog-utils.js";
@@ -274,7 +276,14 @@ function sanitizeSettings(input) {
   const unit = typeof value.unit === "string" ? value.unit.slice(0, 80) : "all";
   const focus = value.focus === "mistakes" ? "mistakes" : "all";
   const section = typeof value.section === "string" ? value.section.slice(0, 32) : "start";
+  const adminSection =
+    value.adminSection === "new" || value.adminSection === "security" || value.adminSection === "profiles"
+      ? value.adminSection
+      : "profiles";
   const language = sanitizeLanguageCode(value.language, DEFAULT_LANGUAGE);
+  const conjugationTense = value.conjugationTense === "mixed"
+    ? "mixed"
+    : sanitizeConjugationTense(value.conjugationTense, DEFAULT_CONJUGATION_TENSE);
   const importLanguage = sanitizeLanguageCode(value.importLanguage, DEFAULT_LANGUAGE);
   const importSchoolGrade = sanitizeSchoolGrade(value.importSchoolGrade, DEFAULT_SCHOOL_GRADE);
   const importType = value.importType === "conjugation" ? "conjugation" : "vocabulary";
@@ -286,7 +295,9 @@ function sanitizeSettings(input) {
     unit,
     focus,
     section,
+    adminSection,
     language,
+    conjugationTense,
     importLanguage,
     importSchoolGrade,
     importType

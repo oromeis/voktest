@@ -4,14 +4,31 @@ import {
   DEFAULT_CONJUGATION_TENSE,
   DEFAULT_LANGUAGE,
   DEFAULT_SCHOOL_GRADE,
+  getSupportedConjugationTenses,
+  isSupportedConjugationTense,
   normalizeConjugationEntry,
   normalizeVocabularyEntry,
+  sanitizeConjugationTense,
   sanitizeLanguageCode,
   sanitizeSchoolGrade
 } from "./catalog-utils.js";
 
 const OCR_MIN_GOOD_CANDIDATES = 4;
 const MAX_OCR_IMAGE_EDGE = 2200;
+const SUPPORTED_CONJUGATION_TENSE_LABEL = getSupportedConjugationTenses().join(", ");
+
+export function resolveConjugationImportTense(value, contextLabel = "Konjugation") {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) {
+    return DEFAULT_CONJUGATION_TENSE;
+  }
+  if (!isSupportedConjugationTense(raw)) {
+    throw new Error(
+      `${contextLabel}: Unbekannte Zeitform "${raw}". Erlaubt sind: ${SUPPORTED_CONJUGATION_TENSE_LABEL}.`
+    );
+  }
+  return sanitizeConjugationTense(raw, DEFAULT_CONJUGATION_TENSE);
+}
 
 export function createImportModule({
   state,
@@ -404,7 +421,9 @@ export function createImportModule({
 
     const stamp = Date.now();
     return data
-      .map((item, index) => toConjugationEntry(item, `json-conj-${stamp}-${index}`, importContext))
+      .map((item, index) =>
+        toConjugationEntry(item, `json-conj-${stamp}-${index}`, importContext, `Eintrag ${index + 1}`)
+      )
       .filter(Boolean);
   }
 
@@ -456,7 +475,8 @@ export function createImportModule({
             }
           },
           `csv-conj-${stamp}-${index}`,
-          importContext
+          importContext,
+          `Zeile ${index + 1}`
         );
       })
       .filter(Boolean);
@@ -489,14 +509,15 @@ export function createImportModule({
     };
   }
 
-  function toConjugationEntry(item, id, importContext) {
+  function toConjugationEntry(item, id, importContext, contextLabel = "Konjugation") {
+    const tense = resolveConjugationImportTense(item?.tense, contextLabel);
     const normalized = normalizeConjugationEntry(
       {
         ...item,
         id,
         language: item?.language || importContext.language,
         schoolGrade: item?.schoolGrade || importContext.schoolGrade,
-        tense: item?.tense || DEFAULT_CONJUGATION_TENSE,
+        tense,
         forms: {
           ...item?.forms,
           ...(Object.fromEntries(
@@ -511,13 +532,12 @@ export function createImportModule({
       }
     );
     if (!normalized) {
-      return null;
+      throw new Error(`${contextLabel}: Ungültiger Konjugationsdatensatz.`);
     }
 
     return {
       ...normalized,
-      unit: String(normalized.unit || "Konjugation Import").trim(),
-      tense: DEFAULT_CONJUGATION_TENSE
+      unit: String(normalized.unit || "Konjugation Import").trim()
     };
   }
 
