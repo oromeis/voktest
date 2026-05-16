@@ -1,4 +1,5 @@
 import { gradeFromPercent, gradeLabel, labelMode } from "./common.js";
+import { modeGrantsPoints } from "./admin-utils.js";
 import {
   DEFAULT_CONJUGATION_TENSE,
   DEFAULT_LANGUAGE,
@@ -54,10 +55,12 @@ export function createHistoryModule({ state, elements, persistHistory }) {
       ["Richtig", String(result.correct)],
       ["Falsch", String(result.wrong)],
       ["Trefferquote", `${result.percent}%`],
-      ["Punkte", String(result.points)],
       ["Zeit", formatDuration(result.durationSeconds)],
       ["Modus", labelMode(result.mode)]
     ];
+    if (modeGrantsPoints(result.mode)) {
+      cards.splice(3, 0, ["Punkte", String(result.points)]);
+    }
 
     cards.forEach(([key, value]) => {
       const box = document.createElement("article");
@@ -144,7 +147,7 @@ export function createHistoryModule({ state, elements, persistHistory }) {
       item.innerHTML = `
         <p class="recent-head">${formatRunDate(run.date)} · ${labelMode(run.mode)}</p>
         <p>${run.correct}/${run.total} richtig · ${run.percent}% · Note ${run.grade}</p>
-        <p class="recent-sub">Richtung: ${formatDirectionLabel(run)} · Punkte: ${run.points} · Zeit: ${formatDuration(run.durationSeconds)}</p>
+        <p class="recent-sub">${formatRunDetails(run)}</p>
         <p class="recent-sub">Optionen: ${formatRunOptions(run)}</p>
       `;
       elements.recentRunsList.append(item);
@@ -271,6 +274,15 @@ function formatDirectionLabel(run) {
     return `DE -> ${language.codeLabel}`;
   }
   return `${language.codeLabel} -> DE`;
+}
+
+function formatRunDetails(run) {
+  const parts = [`Richtung: ${formatDirectionLabel(run)}`];
+  if (modeGrantsPoints(run?.mode)) {
+    parts.push(`Punkte: ${Math.max(0, Number(run?.points) || 0)}`);
+  }
+  parts.push(`Zeit: ${formatDuration(run?.durationSeconds)}`);
+  return parts.join(" · ");
 }
 
 function formatRunOptions(run) {

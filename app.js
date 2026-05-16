@@ -1,5 +1,7 @@
 import { BASE_VOCABULARY } from "./data/vocabulary.js";
+import { BASE_VOCABULARY_EN7 } from "./data/vocabulary-en7.js";
 import { BASE_VOCABULARY_FR6 } from "./data/vocabulary-fr6.js";
+import { BASE_VOCABULARY_FR7 } from "./data/vocabulary-fr7.js";
 import { BASE_VOCABULARY_LA6 } from "./data/vocabulary-la6.js";
 import { BASE_CONJUGATIONS } from "./data/conjugations.js";
 import {
@@ -11,6 +13,7 @@ import {
   getRewardLabel,
   getWeekContext,
   isDateWithinRange,
+  modeGrantsPoints,
   sanitizeAnswerTimerSeconds,
   sanitizeTargetMinutes,
   secondsToMinutes
@@ -76,7 +79,13 @@ const DEFAULT_SETTINGS = {
 
 const GRADE_OPTIONS = createGradeOptions();
 const NORMALIZED_BASE_VOCABULARY = normalizeVocabularyList(
-  [...BASE_VOCABULARY, ...BASE_VOCABULARY_FR6, ...BASE_VOCABULARY_LA6],
+  [
+    ...BASE_VOCABULARY,
+    ...BASE_VOCABULARY_EN7,
+    ...BASE_VOCABULARY_FR6,
+    ...BASE_VOCABULARY_FR7,
+    ...BASE_VOCABULARY_LA6
+  ],
   {
   fallbackLanguage: DEFAULT_LANGUAGE,
   fallbackSchoolGrade: DEFAULT_SCHOOL_GRADE,
@@ -1179,6 +1188,7 @@ function buildVocabularyQuestion(entry) {
     prompt,
     answerDisplay,
     answerVariants: splitVariants(answerDisplay, {
+      optionalVocabularyAnnotations: true,
       optionalGermanArticles: allowOptionalGermanArticles,
       optionalGermanUmlautVariants: allowGermanUmlautVariants,
       optionalLatinOrthography: allowLatinOrthographyVariants
@@ -1774,30 +1784,42 @@ function submitQuestion(isCorrect, userAnswer, options = {}) {
   }
   session.questionSubmitted = true;
   const feedbackTiming = getAnswerFeedbackTiming(session, question, resolvedIsCorrect);
+  const scoringActive = modeGrantsPoints(session.mode);
 
   if (resolvedIsCorrect) {
     session.correct += 1;
     session.streak += 1;
     session.bestStreak = Math.max(session.bestStreak, session.streak);
-    const basePoints = 8 + Math.min(session.streak, 6);
-    const pointsResult = computeTimedAnswerPoints(
-      basePoints,
-      answerElapsedMs,
-      session.answerTimerSeconds
-    );
-    session.points += pointsResult.totalPoints;
-    setFeedback(resolvedOptions.feedbackText || getCorrectAnswerFeedbackText(pointsResult), true);
-    showBigFeedback(
-      resolvedOptions.bannerText || getCorrectAnswerBannerText(pointsResult),
-      true,
-      feedbackTiming.bannerMs
-    );
+    if (scoringActive) {
+      const basePoints = 8 + Math.min(session.streak, 6);
+      const pointsResult = computeTimedAnswerPoints(
+        basePoints,
+        answerElapsedMs,
+        session.answerTimerSeconds
+      );
+      session.points += pointsResult.totalPoints;
+      setFeedback(resolvedOptions.feedbackText || getCorrectAnswerFeedbackText(pointsResult), true);
+      showBigFeedback(
+        resolvedOptions.bannerText || getCorrectAnswerBannerText(pointsResult),
+        true,
+        feedbackTiming.bannerMs
+      );
+    } else {
+      setFeedback(resolvedOptions.feedbackText || "Richtig.", true);
+      showBigFeedback(
+        resolvedOptions.bannerText || "Richtig!",
+        true,
+        feedbackTiming.bannerMs
+      );
+    }
     triggerSparkles();
     safeVibrate([14]);
   } else {
     session.wrong += 1;
     session.streak = 0;
-    session.points = Math.max(0, session.points - 2);
+    if (scoringActive) {
+      session.points = Math.max(0, session.points - 2);
+    }
     session.wrongItems.push({
       prompt: question.prompt,
       expected: question.answerDisplay,
@@ -2270,7 +2292,7 @@ function applyWeeklyRewardIfEligible(session) {
   session.weekKey = weeklyGoal.weekKey;
   session.rewardBonusPoints = 0;
 
-  if (!weeklyGoal.rewardGranted && totalUsedSeconds >= targetSeconds) {
+  if (!weeklyGoal.rewardGranted && totalUsedSeconds >= targetSeconds && modeGrantsPoints(session.mode)) {
     const bonusPoints = computeRewardBonusPoints(weeklyGoal.rewardDefinition, session.points);
     if (bonusPoints > 0) {
       session.points += bonusPoints;
@@ -2773,10 +2795,7 @@ function renderAdminProfileHistory() {
 
     const details = document.createElement("p");
     details.className = "recent-sub";
-    details.textContent = `Richtung: ${formatAdminHistoryDirection(run.direction, run.language, run.mode)} · Punkte: ${Math.max(
-      0,
-      Number(run.points) || 0
-    )} · Zeit: ${formatRunDuration(run.durationSeconds)}`;
+    details.textContent = formatAdminHistoryDetails(run);
 
     const options = document.createElement("p");
     options.className = "recent-sub";
@@ -3705,6 +3724,17 @@ function formatAdminHistoryDirection(direction, languageCode, mode) {
     return `DE -> ${language.codeLabel}`;
   }
   return `${language.codeLabel} -> DE`;
+}
+
+function formatAdminHistoryDetails(entry) {
+  const parts = [
+    `Richtung: ${formatAdminHistoryDirection(entry?.direction, entry?.language, entry?.mode)}`
+  ];
+  if (modeGrantsPoints(entry?.mode)) {
+    parts.push(`Punkte: ${Math.max(0, Number(entry?.points) || 0)}`);
+  }
+  parts.push(`Zeit: ${formatRunDuration(entry?.durationSeconds)}`);
+  return parts.join(" · ");
 }
 
 function formatAdminHistoryOptions(entry) {

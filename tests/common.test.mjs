@@ -69,6 +69,34 @@ test("splitDisplayVariants keeps umlauts and original casing for UI labels", () 
   assert.deepEqual(variants, ["Möbel", "Äpfel", "Öl"]);
 });
 
+test("vocabulary variants ignore parenthetical usage hints and keep core answer", () => {
+  const variants = splitVariants("autism (no pl)", { optionalVocabularyAnnotations: true });
+
+  assert.equal(isAnswerCorrect("autism", variants), true);
+  assert.equal(isAnswerCorrect("autism no pl", variants), true);
+});
+
+test("vocabulary variants expand inline parentheses and equals hints", () => {
+  const adVariants = splitVariants("ad(vertisement)", { optionalVocabularyAnnotations: true });
+  const picVariants = splitVariants("pic (= picture)", { optionalVocabularyAnnotations: true });
+
+  assert.equal(isAnswerCorrect("ad", adVariants), true);
+  assert.equal(isAnswerCorrect("advertisement", adVariants), true);
+  assert.equal(isAnswerCorrect("pic", picVariants), true);
+  assert.equal(isAnswerCorrect("picture", picVariants), true);
+});
+
+test("vocabulary variants expand slash alternatives without requiring raw PDF markup", () => {
+  const germanVariants = splitVariants("Besserwisser/-in", { optionalVocabularyAnnotations: true });
+  const phraseVariants = splitVariants("Hol/Holt mich hier raus!", {
+    optionalVocabularyAnnotations: true
+  });
+
+  assert.equal(isAnswerCorrect("Besserwisserin", germanVariants), true);
+  assert.equal(isAnswerCorrect("Hol mich hier raus", phraseVariants), true);
+  assert.equal(isAnswerCorrect("Holt mich hier raus", phraseVariants), true);
+});
+
 test("labelMode supports conjugation mode", () => {
   assert.equal(labelMode("conjugation"), "Konjugation");
 });

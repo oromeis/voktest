@@ -10,6 +10,7 @@ import {
   getWeekContext,
   getWeekKey,
   isDynamicPasswordValid,
+  modeGrantsPoints,
   pickWeeklyReward,
   sanitizeAnswerTimerSeconds
 } from "../modules/admin-utils.js";
@@ -68,6 +69,13 @@ test("answer timer seconds allow disabling and clamp active values", () => {
   assert.equal(sanitizeAnswerTimerSeconds(3), 5);
   assert.equal(sanitizeAnswerTimerSeconds(150), 120);
   assert.equal(sanitizeAnswerTimerSeconds("foo", DEFAULT_ANSWER_TIMER_SECONDS), 0);
+});
+
+test("learn mode grants no points while scored modes still do", () => {
+  assert.equal(modeGrantsPoints("learn"), false);
+  assert.equal(modeGrantsPoints("quiz"), true);
+  assert.equal(modeGrantsPoints("test"), true);
+  assert.equal(modeGrantsPoints("conjugation"), true);
 });
 
 test("timed answer points reward faster correct answers", () => {

@@ -13,6 +13,10 @@ export const DEFAULT_ANSWER_TIMER_SECONDS = 0;
 export const MIN_ANSWER_TIMER_SECONDS = 5;
 export const MAX_ANSWER_TIMER_SECONDS = 120;
 
+export function modeGrantsPoints(mode) {
+  return mode === "quiz" || mode === "test" || mode === "conjugation";
+}
+
 export const WEEKLY_REWARD_POOL = [
   { id: "flat_350", type: "flat", value: 350 },
   { id: "flat_500", type: "flat", value: 500 },

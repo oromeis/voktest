@@ -20,7 +20,9 @@ export function normalize(value) {
 }
 
 export function splitVariants(answerDisplay, options = {}) {
-  const variants = splitDisplayVariants(answerDisplay);
+  const variants = options.optionalVocabularyAnnotations
+    ? expandVocabularyDisplayVariants(answerDisplay)
+    : splitDisplayVariants(answerDisplay);
 
   const normalizedWholeAnswer = normalize(answerDisplay);
   const allowToPrefix = normalizedWholeAnswer.includes("to ");
@@ -77,6 +79,182 @@ export function splitDisplayVariants(answerDisplay) {
     .split(/[;,/]|\bor\b/gi)
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function expandVocabularyDisplayVariants(answerDisplay) {
+  const chunks = String(answerDisplay)
+    .split(/;|,|\s+\/\s+|\bor\b/gi)
+    .map((part) => cleanVariantText(part))
+    .filter(Boolean);
+
+  const expanded = new Set();
+  chunks.forEach((chunk) => {
+    expandVocabularyChunk(chunk).forEach((candidate) => {
+      const cleaned = cleanVariantText(candidate);
+      if (cleaned) {
+        expanded.add(cleaned);
+      }
+    });
+  });
+
+  if (!expanded.size) {
+    return splitDisplayVariants(answerDisplay);
+  }
+  return [...expanded];
+}
+
+function expandVocabularyChunk(chunk) {
+  const seed = cleanVariantText(chunk);
+  if (!seed) {
+    return [];
+  }
+
+  const baseForms = new Set([seed]);
+  const stripped = stripParentheticalSegments(seed);
+  if (stripped) {
+    baseForms.add(stripped);
+  }
+  extractParentheticalEqualsOptions(seed).forEach((candidate) => {
+    if (candidate) {
+      baseForms.add(candidate);
+    }
+  });
+  expandInlineParentheticalForms(seed).forEach((candidate) => {
+    if (candidate) {
+      baseForms.add(candidate);
+    }
+  });
+
+  const expanded = new Set();
+  baseForms.forEach((form) => {
+    const cleaned = cleanVariantText(form);
+    if (!cleaned) {
+      return;
+    }
+    expanded.add(cleaned);
+    const strippedForm = stripParentheticalSegments(cleaned);
+    if (strippedForm) {
+      expanded.add(strippedForm);
+    }
+    expandSlashPhraseVariants(cleaned).forEach((candidate) => {
+      const slashCleaned = cleanVariantText(candidate);
+      if (!slashCleaned) {
+        return;
+      }
+      expanded.add(slashCleaned);
+      const slashStripped = stripParentheticalSegments(slashCleaned);
+      if (slashStripped) {
+        expanded.add(slashStripped);
+      }
+    });
+  });
+
+  return [...expanded];
+}
+
+function extractParentheticalEqualsOptions(value) {
+  const matches = [...String(value).matchAll(/\(\s*=\s*([^)]+?)\s*\)/g)];
+  return matches
+    .map((match) => cleanVariantText(match[1]))
+    .filter(Boolean);
+}
+
+function expandInlineParentheticalForms(value) {
+  const tokenPattern = /([^\s()]*)\(([^)]+)\)([^\s()]*)/;
+  const variants = new Set([cleanVariantText(value)]);
+  let changed = true;
+
+  while (changed && variants.size < 32) {
+    changed = false;
+    for (const candidate of [...variants]) {
+      const match = candidate.match(tokenPattern);
+      if (!match) {
+        continue;
+      }
+      const [fullToken, prefix, inner, suffix] = match;
+      const withoutHint = cleanVariantText(candidate.replace(fullToken, `${prefix}${suffix}`));
+      const withHint = cleanVariantText(candidate.replace(fullToken, `${prefix}${inner}${suffix}`));
+      if (withoutHint && !variants.has(withoutHint)) {
+        variants.add(withoutHint);
+        changed = true;
+      }
+      if (withHint && !variants.has(withHint)) {
+        variants.add(withHint);
+        changed = true;
+      }
+    }
+  }
+
+  return [...variants];
+}
+
+function expandSlashPhraseVariants(value) {
+  const tokens = String(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  if (!tokens.some((token) => token.includes("/"))) {
+    return [value];
+  }
+
+  const maxVariants = 64;
+  let variants = [""];
+  tokens.forEach((token) => {
+    const tokenOptions = expandSlashToken(token).slice(0, 8);
+    const next = [];
+    variants.forEach((prefix) => {
+      tokenOptions.forEach((option) => {
+        if (next.length >= maxVariants) {
+          return;
+        }
+        next.push(prefix ? `${prefix} ${option}` : option);
+      });
+    });
+    variants = next.length ? next : variants;
+  });
+
+  return variants.length ? variants : [value];
+}
+
+function expandSlashToken(token) {
+  const cleaned = cleanVariantText(token);
+  if (!cleaned.includes("/")) {
+    return [cleaned];
+  }
+
+  const parts = cleaned.split("/");
+  if (parts.some((part) => part === "")) {
+    return [cleaned];
+  }
+
+  const options = new Set([cleaned]);
+  const [base, ...rest] = parts;
+  expandSlashSegmentPart(base).forEach((candidate) => options.add(candidate));
+  rest.forEach((part) => {
+    if (part.startsWith("-")) {
+      options.add(`${stripParentheticalSegments(base)}${part.slice(1)}`);
+      return;
+    }
+    expandSlashSegmentPart(part).forEach((candidate) => options.add(candidate));
+  });
+  return [...options]
+    .map((value) => cleanVariantText(value))
+    .filter(Boolean);
+}
+
+function expandSlashSegmentPart(value) {
+  const cleaned = cleanVariantText(value);
+  const options = new Set([cleaned]);
+  const stripped = stripParentheticalSegments(cleaned);
+  if (stripped) {
+    options.add(stripped);
+  }
+  const match = cleaned.match(/^([^\s()]+)\(([^)]+)\)$/);
+  if (match) {
+    options.add(cleanVariantText(match[1]));
+    options.add(cleanVariantText(match[2]));
+  }
+  return [...options].filter(Boolean);
 }
 
 export function isAnswerCorrect(answer, validVariants) {
@@ -243,6 +421,16 @@ function foldGermanUmlautDigraphs(value) {
     .replace(/ae/g, "a")
     .replace(/oe/g, "o")
     .replace(/(^|[^aeiouyq])ue/g, "$1u");
+}
+
+function stripParentheticalSegments(value) {
+  return cleanVariantText(String(value).replace(/\s*\([^)]*\)/g, " "));
+}
+
+function cleanVariantText(value) {
+  return String(value)
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function levenshtein(a, b) {
